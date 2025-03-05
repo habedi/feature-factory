@@ -1,76 +1,76 @@
-# A Template for Rust Projects
+## Feature Factory
 
-<div align="center">
-  <picture>
-    <source media="(prefers-color-scheme: light)" srcset="assets/logos/rustacean-flat-happy.svg">
-    <source media="(prefers-color-scheme: dark)" srcset="assets/logos/rustacean-flat-happy.svg">
-    <img alt="template-rust-project logo" src="assets/logos/rustacean-flat-happy.svg" height="40%" width="40%">
-  </picture>
-</div>
-<br>
+[![Tests](https://img.shields.io/github/actions/workflow/status/habedi/feature-factory/tests.yml?label=tests&style=flat&labelColor=555555&logo=github)](https://github.com/habedi/feature-factory/actions/workflows/tests.yml)
+[![Lints](https://img.shields.io/github/actions/workflow/status/habedi/feature-factory/lints.yml?label=lints&style=flat&labelColor=555555&logo=github)](https://github.com/habedi/feature-factory/actions/workflows/lints.yml)
+[![Code Coverage](https://img.shields.io/codecov/c/github/habedi/feature-factory?style=flat&labelColor=555555&logo=codecov)](https://codecov.io/gh/habedi/feature-factory)
+[![CodeFactor](https://img.shields.io/codefactor/grade/github/habedi/feature-factory?style=flat&labelColor=555555&logo=codefactor)](https://www.codefactor.io/repository/github/habedi/feature-factory)
+[![Crates.io](https://img.shields.io/crates/v/feature-factory.svg?style=flat&color=fc8d62&logo=rust)](https://crates.io/crates/feature-factory)
+[![Docs.rs](https://img.shields.io/badge/docs.rs-feature-factory-66c2a5?style=flat&labelColor=555555&logo=docs.rs)](https://docs.rs/feature-factory)
+[![Downloads](https://img.shields.io/crates/d/feature-factory?style=flat&labelColor=555555&logo=rust)](https://crates.io/crates/feature-factory)
+[![MSRV](https://img.shields.io/badge/MSRV-1.83.0-orange?style=popout-square&logo=rust&label=msrv)](https://github.com/rust-lang/rust/releases/tag/1.83.0)
+[![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-007ec6?style=flat&labelColor=555555&logo=open-source-initiative)](https://github.com/habedi/feature-factory)
 
-<p align="center">
-  <a href="https://github.com/habedi/template-rust-project/actions/workflows/tests.yml">
-    <img alt="Tests" src="https://img.shields.io/github/actions/workflow/status/habedi/template-rust-project/tests.yml?label=Tests&style=flat&labelColor=555555&logo=github">
-  </a>
-  <a href="https://github.com/habedi/template-rust-project/actions/workflows/build_linux.yml">
-    <img alt="Linux Build" src="https://img.shields.io/github/actions/workflow/status/habedi/template-rust-project/build_linux.yml?label=Linux%20Build&style=flat&labelColor=555555&logo=linux">
-  </a>
-  <a href="https://github.com/habedi/template-rust-project/actions/workflows/build_windows.yml">
-    <img alt="Windows Build" src="https://img.shields.io/github/actions/workflow/status/habedi/template-rust-project/build_windows.yml?label=Windows%20Build&style=flat&labelColor=555555&logo=github">
-  </a>
-  <a href="https://github.com/habedi/template-rust-project/actions/workflows/build_macos.yml">
-    <img alt="MacOS Build" src="https://img.shields.io/github/actions/workflow/status/habedi/template-rust-project/build_macos.yml?label=MacOS%20Build&style=flat&labelColor=555555&logo=apple">
-  </a>
-  <br>
-<a href="docs">
-    <img alt="Docs" src="https://img.shields.io/badge/docs-latest-3776ab?style=flat&labelColor=555555&logo=readthedocs">
-  </a>
-  <a href="https://github.com/habedi/template-rust-project">
-    <img alt="License" src="https://img.shields.io/badge/license-MIT%2FApache--2.0-007ec6?style=flat&labelColor=555555&logo=open-source-initiative">
-  </a>
-  <a href="https://codecov.io/gh/habedi/template-rust-project">
-    <img alt="Code Coverage" src="https://img.shields.io/codecov/c/github/habedi/template-rust-project?style=flat&labelColor=555555&logo=codecov">
-  </a>
-  <a href="https://www.codefactor.io/repository/github/habedi/template-rust-project">
-    <img alt="CodeFactor" src="https://img.shields.io/codefactor/grade/github/habedi/template-rust-project?style=flat&labelColor=555555&logo=codefactor">
-  </a>
-  <br>
-  <a href="https://crates.io/crates/template-rust-project">
-    <img alt="Crates.io" src="https://img.shields.io/crates/v/template-rust-project.svg?style=flat&color=fc8d62&logo=rust">
-  </a>
-  <a href="https://docs.rs/template-rust-project">
-    <img alt="Docs.rs" src="https://img.shields.io/badge/docs.rs-template--rust--project-66c2a5?style=flat&labelColor=555555&logo=docs.rs">
-  </a>
-  <a href="https://crates.io/crates/template-rust-project">
-    <img alt="Downloads" src="https://img.shields.io/crates/d/template-rust-project?style=flat&labelColor=555555&logo=rust">
-  </a>
-  <a href="https://github.com/habedi/template-rust-project/releases/latest">
-    <img alt="Release" src="https://img.shields.io/github/release/habedi/template-rust-project.svg?style=flat&labelColor=555555&logo=github">
-  </a>
-  <a href="https://github.com/habedi/template-rust-project/releases">
-    <img alt="Total Downloads" src="https://img.shields.io/github/downloads/habedi/template-rust-project/total.svg?style=flat&labelColor=555555&logo=github">
-  </a>
-</p>
+Feature Factory is a high-performance feature engineering library for Rust.
+It is built on top of [Apache DataFusion](https://datafusion.apache.org/) and uses it internally for fast
+in-memory data processing.
+It is inspired by the [Feature Engine](https://feature-engine.trainindata.com/en/latest/) Python library,
+and provides a wide range of components for common feature engineering tasks like imputation, encoding,
+discretization, and selecting the best features.
 
-This is a template repository with a minimalistic structure to make it easier to start a new Rust project.
-I share it here in case it might be useful to others.
+Feature Factory aims to be feature-rich and provide an API similar to
+[Scikit-learn](https://scikit-learn.org/stable/) with performance benefits of Rust.
+Its components (referred to as transformers) follow a
+[fit-transform paradigm](https://scikit-learn.org/stable/data_transforms.html)
+where a transformer is first fitted to the data if needed and then used to transform the data.
 
-## Features
+### Features
 
-- Minimalistic project structure
-- Pre-configured GitHub Actions for running tests and making releases for different platforms
-- Makefile for managing common tasks such as formatting, testing, linting, and building
-- Example configuration files for common tools like `rustfmt`, `clippy`, and `editorconfig`
-- GitHub badges for tests, builds, code quality and coverage, documentation, etc.
+- **High Performance** - Feature Factory uses Apache DataFusion as the backend data processing engine to implement the
+  transformers.
+- **Scikit-learn API** - Feature Factory provides a Scikit-learn-like API for feature engineering, which most data
+  scientists are familiar with.
+- **Pipeline API** - Feature Factory provides a pipeline API that allows users to chain multiple transformers together
+  to create a feature engineering pipeline.
+- **Large Collection of Transformers** - Currently, Feature Factory provides the following transformers that can be used
+  in a feature engineering pipeline:
 
-## Contributing
+| **Category**                                                                     | **Transformers**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Status |
+|----------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------|
+| [**Imputation**](src/transformers/imputation.rs)                                 | - `MeanMedianImputer`: Replace missing data with mean (or median).  <br>- `ArbitraryNumberImputer`: Replace missing data with an arbitrary number.  <br>- `EndTailImputer`: Replace missing data with values at distribution tails.  <br>- `CategoricalImputer`: Replace missing data with an arbitrary string or most frequent category.  <br>- `AddMissingIndicator`: Add a binary indicator for missing data.  <br>- `DropMissingData`: Remove rows with missing values.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Tested |
+| [**Categorical Encoding**](src/transformers/categorical_encoding.rs)             | - `OneHotEncoder`: Perform one-hot encoding.  <br>- `CountFrequencyEncoder`: Replace categories with their frequencies.  <br>- `OrdinalEncoder`: Replace categories with ordered numbers.  <br>- `MeanEncoder`: Replace categories with target mean.  <br>- `WoEEncoder`: Replace categories with the weight of evidence.  <br>- `RareLabelEncoder`: Group infrequent categories.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Tested |
+| [**Variable Discretization**](src/transformers/variable_discretization.rs)       | - `ArbitraryDiscretizer`: Discretize based on user-defined intervals.  <br>- `EqualFrequencyDiscretizer`: Discretize into equal-frequency bins.  <br>- `EqualWidthDiscretizer`: Discretize into equal-width bins.  <br>- `GeometricWidthDiscretizer`: Discretize into geometric intervals.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Tested |
+| [**Outlier Handling**](src/transformers/outlier_handling.rs)                     | - `ArbitraryOutlierCapper`: Cap outliers at user-defined values.  <br>- `Winsorizer`: Cap outliers using statistical parameters.  <br>- `OutlierTrimmer`: Remove outliers from the dataset.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |        |
+| [**Numerical Transformation**](src/transformers/numerical_transformation.rs)     | - `LogTransformer`: Apply logarithmic transformation.  <br>- `LogCpTransformer`: Apply log transformation with a constant.  <br>- `ReciprocalTransformer`: Apply reciprocal transformation.  <br>- `PowerTransformer`: Apply power transformation.  <br>- `BoxCoxTransformer`: Apply Box-Cox transformation.  <br>- `YeoJohnsonTransformer`: Apply Yeo-Johnson transformation.  <br>- `ArcsinTransformer`: Apply arcsin transformation.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |        |
+| [**Feature Creation**](src/transformers/feature_selection.rs)                    | - `MathFeatures`: Create new features with mathematical operations.  <br>- `RelativeFeatures`: Combine features with reference variables.  <br>- `CyclicalFeatures`: Encode cyclical features using sine or cosine.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |        |
+| [**Datetime Features**](src/transformers/datetime_features.rs)                   | - `DatetimeFeatures`: Extract features from datetime variables.  <br>- `DatetimeSubtraction`: Compute time differences between datetime variables.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |        |
+| [**Forecasting Features**](src/transformers/forecasting_features.rs)             | - `LagFeatures`: Extract lag features.  <br>- `WindowFeatures`: Create rolling window features.  <br>- `ExpandingWindowFeatures`: Create expanding window features.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |        |
+| [**Scaling & Normalization**](src/transformers/scaling_and_normalization.rs)     | - `MeanNormalizationScaler`: Scale variables using mean normalization.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |        |
+| [**Additional Transformations**](src/transformers/additional_transformations.rs) | - `PolynomialFeatures`: Generate polynomial and interaction features.  <br>- `SplineTransformer`: Generate spline-based features for non-linear transformations.  <br>- `Binarizer`: Convert numerical features into binary indicators based on a threshold.  <br>- `FeatureHasher`: Convert categorical features into a numerical matrix using hashing.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |        | 
+| [**Feature Selection**](src/transformers/feature_selection.rs)                   | - `DropFeatures`: Drop specific variables.  <br>- `DropConstantFeatures`: Remove constant and quasi-constant variables.  <br>- `DropDuplicateFeatures`: Remove duplicate variables.  <br>- `DropCorrelatedFeatures`: Remove highly correlated variables.  <br>- `SmartCorrelatedSelection`: Select the best features from correlated groups.  <br>- `DropHighPSIFeatures`: Drop features based on Population Stability Index (PSI).  <br>- `SelectByInformationValue`: Select features based on information value.  <br>- `SelectByShuffling`: Select features by evaluating performance after shuffling.  <br>- `SelectBySingleFeaturePerformance`: Select features based on univariate estimators.  <br>- `SelectByTargetMeanPerformance`: Select features based on target mean encoding.  <br>- `RecursiveFeatureElimination`: Recursively eliminate features based on model performance.  <br>- `RecursiveFeatureAddition`: Recursively add features based on model performance.  <br>- `ProbeFeatureSelection`: Select features by comparing them to random variables.  <br>- `MRMR`: Select features using Maximum Relevance Minimum Redundancy. |        |
+
+> [!NOTE]
+> Status shows whether the module is `Tested` and `Benchmarked`.
+> Empty status means the module is not tested and benchmarked yet.
+
+### Installation
+
+```bash
+cargo add feature-factory
+```
+
+*Feature Factory requires Rust 1.83 or later.*
+
+### Documentation
+
+You can find the latest API documentation on [docs.rs/feature-factory](https://docs.rs/feature-factory).
+
+### Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for details on how to make a contribution.
 
-## License
+### License
 
-This project is licensed under either of these:
+Feature-factory is available under the terms of either of these licenses:
 
-* MIT License ([LICENSE-MIT](LICENSE-MIT) or https://opensource.org/licenses/MIT)
-* Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or https://www.apache.org/licenses/LICENSE-2.0)
+* MIT License ([LICENSE-MIT](LICENSE-MIT))
+* Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))

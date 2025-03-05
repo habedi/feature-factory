@@ -1,9 +1,9 @@
 # Variables
-PKG = github.com/habedi/template-rust-project
-BINARY_NAME = $(or $(PROJ_BINARY), $(notdir $(PKG)))
-BINARY = target/release/$(BINARY_NAME)
+REPO_URL = github.com/habedi/rustfe
+BINARY_NAME := $(or $(PROJ_BINARY), $(notdir $(REPO_URL)))
+BINARY := target/release/$(BINARY_NAME)
 PATH := /snap/bin:$(PATH)
-DEBUG_PROJ = 1
+DEBUG_FEATURE_FACTORY := 0
 
 # Default target
 .DEFAULT_GOAL := help
@@ -18,24 +18,24 @@ format: ## Format Rust files
 	cargo fmt
 
 .PHONY: test
-test: format ## Run tests
+test: format ## Run the tests
 	@echo "Running tests..."
-	DEBUG_PROJ=$(DEBUG_PROJ) cargo test -- --nocapture
+	DEBUG_FEATURE_FACTORY=$(DEBUG_FEATURE_FACTORY) cargo test -- --nocapture
 
 .PHONY: coverage
 coverage: format ## Generate test coverage report
 	@echo "Generating test coverage report..."
-	DEBUG_PROJ=$(DEBUG_PROJ) cargo tarpaulin --out Xml --out Html
+	DEBUG_FEATURE_FACTORY=$(DEBUG_FEATURE_FACTORY) cargo tarpaulin --out Xml --out Html
 
 .PHONY: build
 build: format ## Build the binary for the current platform
 	@echo "Building the project..."
-	DEBUG_PROJ=$(DEBUG_PROJ) cargo build --release
+	DEBUG_FEATURE_FACTORY=$(DEBUG_FEATURE_FACTORY) cargo build --release
 
 .PHONY: run
 run: build ## Build and run the binary
 	@echo "Running the $(BINARY) binary..."
-	DEBUG_PROJ=$(DEBUG_PROJ) ./$(BINARY)
+	DEBUG_FEATURE_FACTORY=$(DEBUG_FEATURE_FACTORY) ./$(BINARY)
 
 .PHONY: clean
 clean: ## Remove generated and temporary files
@@ -58,9 +58,9 @@ install-deps: install-snap ## Install development dependencies
 	cargo install cargo-audit
 
 .PHONY: lint
-lint: format ## Run linters on Rust files
+lint: format ## Run the linters
 	@echo "Linting Rust files..."
-	DEBUG_PROJ=$(DEBUG_PROJ) cargo clippy -- -D warnings
+	DEBUG_FEATURE_FACTORY=$(DEBUG_FEATURE_FACTORY) cargo clippy -- -D warnings
 
 .PHONY: publish
 publish: ## Publish the package to crates.io (requires CARGO_REGISTRY_TOKEN to be set)
@@ -68,9 +68,9 @@ publish: ## Publish the package to crates.io (requires CARGO_REGISTRY_TOKEN to b
 	cargo publish --token $(CARGO_REGISTRY_TOKEN)
 
 .PHONY: bench
-bench: ## Run benchmarks
+bench: ## Run the benchmarks
 	@echo "Running benchmarks..."
-	DEBUG_PROJ=$(DEBUG_PROJ) cargo bench
+	DEBUG_FEATURE_FACTORY=$(DEBUG_FEATURE_FACTORY) cargo bench
 
 .PHONY: audit
 audit: ## Run security audit on Rust dependencies
