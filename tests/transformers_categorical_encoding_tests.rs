@@ -40,7 +40,6 @@ async fn create_categorical_df(with_target: bool) -> DataFrame {
     let batch = if with_target {
         // For MeanEncoder and WoEEncoder tests.
         // Let target be: for "red" assign 10, for "blue" assign 20, for "green" assign 30.
-        // Using same order as colors: red, blue, red, green, blue, red.
         let target_vals = vec![
             Some(10.0),
             Some(20.0),
@@ -82,16 +81,13 @@ async fn test_one_hot_encoder() -> FeatureFactoryResult<()> {
         );
     }
     // Check values for one row (e.g. row 0 is "red")
-    // Get value from "color_red" column: it should be 1 if original "color" equals "red".
     let red_col = batch
         .column(schema.index_of("color_red").unwrap())
         .as_any()
         .downcast_ref::<arrow::array::Int32Array>()
         .expect("Expected Int32Array for one-hot column");
-    // row 0: "red" so value should be 1.
-    assert_eq!(red_col.value(0), 1);
-    // row 1: "blue", so "color_red" should be 0.
-    assert_eq!(red_col.value(1), 0);
+    assert_eq!(red_col.value(0), 1, "Row 0 should be encoded as 1 for red");
+    assert_eq!(red_col.value(1), 0, "Row 1 should be encoded as 0 for red");
     Ok(())
 }
 
@@ -104,19 +100,16 @@ async fn test_count_frequency_encoder() -> FeatureFactoryResult<()> {
     let batches = transformed.collect().await?;
     let batch = batches.first().expect("Expected at least one batch");
 
-    // Our test data has: "red" appears 3 times, "blue" 2 times, "green" 1 time.
+    // Expected counts: red appears 3 times, blue 2 times, green 1 time.
     let schema = batch.schema();
     let color_array = batch
         .column(schema.index_of("color").unwrap())
         .as_any()
         .downcast_ref::<Int64Array>()
         .expect("Expected Int64Array after frequency encoding");
-
-    // Check each row:
-    // Row order: red, blue, red, green, blue, red.
     let expected = vec![3, 2, 3, 1, 2, 3];
     for (i, exp) in expected.into_iter().enumerate() {
-        assert_eq!(color_array.value(i), exp);
+        assert_eq!(color_array.value(i), exp, "Row {}: expected {}", i, exp);
     }
     Ok(())
 }
@@ -130,26 +123,23 @@ async fn test_ordinal_encoder() -> FeatureFactoryResult<()> {
     let batches = transformed.collect().await?;
     let batch = batches.first().expect("Expected at least one batch");
 
-    // Our distinct values sorted alphabetically: blue, green, red.
+    // Distinct values sorted alphabetically: blue, green, red.
     // Therefore, blue -> 0, green -> 1, red -> 2.
     let schema = batch.schema();
     let color_array = batch
         .column(schema.index_of("color").unwrap())
         .as_any()
         .downcast_ref::<Int64Array>()
-        .expect("Expected Int64Array for ordinal encoded column");
-
-    // Test rows: row0: red -> 2, row1: blue -> 0, row2: red -> 2, row3: green -> 1, row4: blue -> 0, row5: red -> 2.
+        .expect("Expected Int64Array for ordinal encoding");
     let expected = vec![2, 0, 2, 1, 0, 2];
     for (i, exp) in expected.into_iter().enumerate() {
-        assert_eq!(color_array.value(i), exp);
+        assert_eq!(color_array.value(i), exp, "Row {}: expected {}", i, exp);
     }
     Ok(())
 }
 
 #[tokio::test]
 async fn test_mean_encoder() -> FeatureFactoryResult<()> {
-    // Use the DataFrame with a target column.
     let df = create_categorical_df(true).await;
     let mut encoder = MeanEncoder::new(vec!["color".to_string()], "target".to_string());
     encoder.fit(&df).await?;
@@ -157,23 +147,22 @@ async fn test_mean_encoder() -> FeatureFactoryResult<()> {
     let batches = transformed.collect().await?;
     let batch = batches.first().expect("Expected at least one batch");
 
-    // Our data:
+    // For our test data:
     // color: red, blue, red, green, blue, red
-    // target:10, 20, 10, 30, 20, 10
-    // Means:
-    // red: (10+10+10)/3 = 10, blue: (20+20)/2 = 20, green: 30.
+    // target: 10, 20, 10, 30, 20, 10
+    // Mean for red = (10+10+10)/3 = 10, blue = (20+20)/2 = 20, green = 30.
     let schema = batch.schema();
     let color_array = batch
         .column(schema.index_of("color").unwrap())
         .as_any()
         .downcast_ref::<Float64Array>()
-        .expect("Expected Float64Array for mean encoded column");
+        .expect("Expected Float64Array for mean encoding");
     let expected = vec![10.0, 20.0, 10.0, 30.0, 20.0, 10.0];
     for (i, exp) in expected.into_iter().enumerate() {
         let val = color_array.value(i);
         assert!(
             (val - exp).abs() < 1e-6,
-            "row {}: expected {}, got {}",
+            "Row {}: expected {}, got {}",
             i,
             exp,
             val
@@ -184,9 +173,7 @@ async fn test_mean_encoder() -> FeatureFactoryResult<()> {
 
 #[tokio::test]
 async fn test_woe_encoder() -> FeatureFactoryResult<()> {
-    // Use the DataFrame with a binary target (0 or 1).
-    // For simplicity, let's use the same "target" as in MeanEncoder test but interpret target 1 as good, others as bad.
-    // We'll set: red=1, blue=0, red=1, green=0, blue=0, red=1.
+    // Create a DataFrame with a binary target (Int64).
     let schema = Arc::new(Schema::new(vec![
         Field::new("color", DataType::Utf8, true),
         Field::new("target", DataType::Int64, true),
@@ -213,16 +200,18 @@ async fn test_woe_encoder() -> FeatureFactoryResult<()> {
     let transformed = encoder.transform(df)?;
     let batches = transformed.collect().await?;
     let batch = batches.first().expect("Expected at least one batch");
-    // We won't check exact values here but ensure that the output column is Float64.
     let schema = batch.schema();
     let color_array = batch
         .column(schema.index_of("color").unwrap())
         .as_any()
-        .downcast_ref::<arrow::array::Float64Array>()
-        .expect("Expected Float64Array for WoE encoded column");
-    // Just check that there are no nulls.
+        .downcast_ref::<Float64Array>()
+        .expect("Expected Float64Array for WoE encoding");
     for i in 0..color_array.len() {
-        assert!(!color_array.is_null(i), "Found null in WoE encoded column");
+        assert!(
+            !color_array.is_null(i),
+            "Row {}: WoE encoding should not be null",
+            i
+        );
     }
     Ok(())
 }
@@ -230,25 +219,129 @@ async fn test_woe_encoder() -> FeatureFactoryResult<()> {
 #[tokio::test]
 async fn test_rare_label_encoder() -> FeatureFactoryResult<()> {
     let df = create_categorical_df(false).await;
-    // Set a high threshold so that only categories with frequency below the threshold become "rare".
-    // In our test, red appears 3 times, blue 2 times, green 1 time.
-    // If we set threshold=0.5, then green (1/6 ≈ 0.167) and blue (2/6 ≈ 0.333) are rare, red is not.
+    // With test data, frequencies: red: 3/6, blue: 2/6, green: 1/6.
+    // Using a threshold of 0.5 should mark blue and green as "rare", red remains unchanged.
     let mut encoder = RareLabelEncoder::new(vec!["color".to_string()], 0.5);
     encoder.fit(&df).await?;
     let transformed = encoder.transform(df)?;
     let batches = transformed.collect().await?;
     let batch = batches.first().expect("Expected at least one batch");
-    // The "color" column should now have values: red, rare, red, rare, rare, red.
     let schema = batch.schema();
     let color_array = batch
         .column(schema.index_of("color").unwrap())
         .as_any()
-        .downcast_ref::<datafusion::arrow::array::StringArray>()
-        .expect("Expected StringArray for rare label encoded column");
+        .downcast_ref::<StringArray>()
+        .expect("Expected StringArray for rare label encoding");
     let expected = vec!["red", "rare", "red", "rare", "rare", "red"];
     for (i, exp) in expected.into_iter().enumerate() {
         let val = color_array.value(i);
-        assert_eq!(val, exp, "row {}: expected {}, got {}", i, exp, val);
+        assert_eq!(val, exp, "Row {}: expected {}, got {}", i, exp, val);
     }
+    Ok(())
+}
+
+/// Additional tests to check error conditions.
+
+#[tokio::test]
+async fn test_one_hot_encoder_missing_column() -> FeatureFactoryResult<()> {
+    let df = create_categorical_df(false).await;
+    let mut encoder = OneHotEncoder::new(vec!["nonexistent".to_string()]);
+    let result = encoder.fit(&df).await;
+    assert!(
+        result.is_err(),
+        "Expected error for missing column in OneHotEncoder"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_count_frequency_encoder_missing_column() -> FeatureFactoryResult<()> {
+    let df = create_categorical_df(false).await;
+    let mut encoder = CountFrequencyEncoder::new(vec!["nonexistent".to_string()]);
+    let result = encoder.fit(&df).await;
+    assert!(
+        result.is_err(),
+        "Expected error for missing column in CountFrequencyEncoder"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_ordinal_encoder_missing_column() -> FeatureFactoryResult<()> {
+    let df = create_categorical_df(false).await;
+    let mut encoder = OrdinalEncoder::new(vec!["nonexistent".to_string()]);
+    let result = encoder.fit(&df).await;
+    assert!(
+        result.is_err(),
+        "Expected error for missing column in OrdinalEncoder"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_mean_encoder_invalid_target() -> FeatureFactoryResult<()> {
+    // Create a DF with target as Utf8 (should be numeric).
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("color", DataType::Utf8, true),
+        Field::new("target", DataType::Utf8, true),
+    ]));
+    let colors = vec![Some("red"), Some("blue"), Some("red")];
+    let color_array: ArrayRef = Arc::new(StringArray::from(colors));
+    let targets = vec![Some("high"), Some("low"), Some("high")];
+    let target_array: ArrayRef = Arc::new(StringArray::from(targets));
+    let batch = RecordBatch::try_new(schema.clone(), vec![color_array, target_array]).unwrap();
+    let mem_table = MemTable::try_new(schema, vec![vec![batch]]).unwrap();
+    let ctx = SessionContext::new();
+    ctx.register_table("t", Arc::new(mem_table)).unwrap();
+    let df = ctx.table("t").await.unwrap();
+
+    let mut encoder = MeanEncoder::new(vec!["color".to_string()], "target".to_string());
+    let result = encoder.fit(&df).await;
+    assert!(
+        result.is_err(),
+        "Expected error for invalid target type in MeanEncoder"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_woe_encoder_invalid_target() -> FeatureFactoryResult<()> {
+    // Create a DF with target as Utf8 (should be numeric).
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("color", DataType::Utf8, true),
+        Field::new("target", DataType::Utf8, true),
+    ]));
+    let colors = vec![Some("red"), Some("blue"), Some("red")];
+    let color_array: ArrayRef = Arc::new(StringArray::from(colors));
+    let targets = vec![Some("good"), Some("bad"), Some("good")];
+    let target_array: ArrayRef = Arc::new(StringArray::from(targets));
+    let batch = RecordBatch::try_new(schema.clone(), vec![color_array, target_array]).unwrap();
+    let mem_table = MemTable::try_new(schema, vec![vec![batch]]).unwrap();
+    let ctx = SessionContext::new();
+    ctx.register_table("t", Arc::new(mem_table)).unwrap();
+    let df = ctx.table("t").await.unwrap();
+
+    let mut encoder = WoEEncoder::new(vec!["color".to_string()], "target".to_string());
+    let result = encoder.fit(&df).await;
+    assert!(
+        result.is_err(),
+        "Expected error for invalid target type in WoEEncoder"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_rare_label_encoder_invalid_threshold() -> FeatureFactoryResult<()> {
+    let df = create_categorical_df(false).await;
+    let mut encoder = RareLabelEncoder::new(vec!["color".to_string()], -0.1);
+    let result = encoder.fit(&df).await;
+    assert!(result.is_err(), "Expected error for threshold less than 0");
+
+    let mut encoder2 = RareLabelEncoder::new(vec!["color".to_string()], 1.5);
+    let result2 = encoder2.fit(&df).await;
+    assert!(
+        result2.is_err(),
+        "Expected error for threshold greater than 1"
+    );
     Ok(())
 }

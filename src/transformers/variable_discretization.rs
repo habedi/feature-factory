@@ -1,17 +1,16 @@
-//! # Variable Discretization Transformers
+//! ## Transformers for discretizing continuous variables
 //!
-//! This module provides various discretization (binning) strategies to transform a continuous
-//! variable into a categorical one. The supported discretizers are:
+//! This module provides several transformers (or discretizers) to discretize continuous variables into categorical ones.
+//!
+//! Currently, the following transformers are implemented:
 //!
 //! - **ArbitraryDiscretizer:** Discretizes based on user‑defined intervals.
 //! - **EqualFrequencyDiscretizer:** Discretizes a column into bins containing roughly equal numbers of records.
 //! - **EqualWidthDiscretizer:** Discretizes a column into bins of equal width.
-//! - **GeometricWidthDiscretizer:** Discretizes a column into bins whose boundaries follow a geometric progression.
+//! - **GeometricWidthDiscretizer:** Discretizes a column into bins where boundaries follow a geometric progression.
 //!
-//! Each discretizer exposes a similar API with a constructor, an asynchronous `fit` method to learn
-//! the bin boundaries (if applicable), and a `transform` method that applies the discretization
-//! to a DataFrame. Errors from underlying DataFusion operations are wrapped into a `FeatureFactoryError`
-//! and returned as a `FeatureFactoryResult` (defined in the `exceptions` module).
+//! Each transformer returns a new DataFrame with the encodings applied to the specified columns.
+//! Errors are returned as `FeatureFactoryError` and results are wrapped in `FeatureFactoryResult`.
 
 use crate::exceptions::{FeatureFactoryError, FeatureFactoryResult};
 use datafusion::functions_aggregate::expr_fn::approx_percentile_cont;
@@ -20,7 +19,21 @@ use datafusion::prelude::*;
 use datafusion::scalar::ScalarValue;
 use std::collections::HashMap;
 
-/// Helper to build a CASE expression for intervals.
+/// Validates that a column exists and is numeric (Float64 or Int64).
+fn validate_numeric_column(df: &DataFrame, col_name: &str) -> FeatureFactoryResult<()> {
+    let field = df.schema().field_with_name(None, col_name).map_err(|_| {
+        FeatureFactoryError::MissingColumn(format!("Column '{}' not found", col_name))
+    })?;
+    match field.data_type() {
+        arrow::datatypes::DataType::Float64 | arrow::datatypes::DataType::Int64 => Ok(()),
+        dt => Err(FeatureFactoryError::InvalidParameter(format!(
+            "Column '{}' must be numeric (Float64 or Int64), but found {:?}",
+            col_name, dt
+        ))),
+    }
+}
+
+/// Helper function to build a CASE expression for intervals.
 /// For each interval in `intervals` (tuple: lower, upper, label), it generates a condition:
 /// For the first (n-1) intervals, the condition is:
 /// `WHEN col >= lower AND col < upper THEN label`
@@ -52,7 +65,7 @@ fn build_interval_case_expr(col_name: &str, intervals: &[(f64, f64, String)]) ->
     })
 }
 
-/// Generic helper that applies an interval mapping to each target column in a DataFrame.
+/// Generic helper function that applies an interval mapping to each target column in a DataFrame.
 /// For each column in `target_cols`, if a mapping exists in `mapping` then a CASE expression
 /// is built; otherwise, the original column is retained.
 fn apply_interval_mapping(
@@ -83,7 +96,9 @@ fn apply_interval_mapping(
 /// Helper function to compute the min and max of a column using approximate percentiles.
 /// It uses p=0 for min and p=1 for max.
 async fn compute_min_max(df: &DataFrame, col_name: &str) -> FeatureFactoryResult<(f64, f64)> {
-    // Compute min
+    // Validate column is numeric.
+    validate_numeric_column(df, col_name)?;
+    // Compute min.
     let min_df = df
         .clone()
         .aggregate(
@@ -111,7 +126,7 @@ async fn compute_min_max(df: &DataFrame, col_name: &str) -> FeatureFactoryResult
         ));
     };
 
-    // Compute max
+    // Compute max.
     let max_df = df
         .clone()
         .aggregate(
@@ -142,11 +157,7 @@ async fn compute_min_max(df: &DataFrame, col_name: &str) -> FeatureFactoryResult
     Ok((min_val, max_val))
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ArbitraryDiscretizer
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Discretizer based on user‑defined intervals.
+/// Discretizes columns based on user‑defined intervals.
 /// The user supplies a mapping from column name to a vector of intervals.
 /// Each interval is defined as (lower bound, upper bound, label).
 pub struct ArbitraryDiscretizer {
@@ -160,35 +171,33 @@ impl ArbitraryDiscretizer {
         Self { columns, intervals }
     }
 
-    /// For arbitrary discretization, no fitting is required.
-    pub async fn fit(&mut self, _df: &DataFrame) -> FeatureFactoryResult<()> {
+    /// This transformer is stateless, so fit does nothing, but we validate the provided intervals.
+    pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
+        // Ensure each target column is numeric.
+        for col_name in &self.columns {
+            validate_numeric_column(df, col_name)?;
+        }
+        // Validate intervals: for each interval, lower must be less than upper.
+        for (col, intervals) in &self.intervals {
+            for (lower, upper, _) in intervals {
+                if lower >= upper {
+                    return Err(FeatureFactoryError::InvalidParameter(format!(
+                        "For column '{}', lower bound {} is not less than upper bound {}",
+                        col, lower, upper
+                    )));
+                }
+            }
+        }
         Ok(())
     }
 
     /// Transform the DataFrame by applying user‑defined intervals.
     pub fn transform(&self, df: DataFrame) -> FeatureFactoryResult<DataFrame> {
-        let mut exprs = vec![];
-        for field in df.schema().fields() {
-            let name = field.name();
-            if self.columns.contains(name) {
-                if let Some(intervals) = self.intervals.get(name) {
-                    exprs.push(build_interval_case_expr(name, intervals).alias(name));
-                } else {
-                    exprs.push(col(name));
-                }
-            } else {
-                exprs.push(col(name));
-            }
-        }
-        df.select(exprs).map_err(FeatureFactoryError::from)
+        apply_interval_mapping(df, &self.columns, &self.intervals)
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// EqualFrequencyDiscretizer
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Discretizer that divides a column into bins of equal frequency.
+/// Divides a column into bins containing roughly equal numbers of records.
 pub struct EqualFrequencyDiscretizer {
     pub columns: Vec<String>,
     pub bins: usize,
@@ -208,9 +217,15 @@ impl EqualFrequencyDiscretizer {
 
     /// Fit the discretizer by computing quantile boundaries for each column.
     pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
+        if self.bins < 1 {
+            return Err(FeatureFactoryError::InvalidParameter(
+                "Number of bins must be at least 1".to_string(),
+            ));
+        }
         for col_name in &self.columns {
+            // Validate numeric column.
+            validate_numeric_column(df, col_name)?;
             let mut boundaries = Vec::with_capacity(self.bins + 1);
-            // Compute quantiles at p = 0, 1/bins, …, 1.0.
             for i in 0..=self.bins {
                 let p = i as f64 / self.bins as f64;
                 let agg_df = df
@@ -237,7 +252,14 @@ impl EqualFrequencyDiscretizer {
                     }
                 }
             }
-            // Build intervals as pairs of consecutive boundaries.
+            if let (Some(first), Some(last)) = (boundaries.first(), boundaries.last()) {
+                if (first - last).abs() < 1e-6 {
+                    return Err(FeatureFactoryError::InvalidParameter(format!(
+                        "Column {} appears to be constant; cannot discretize into equal-frequency bins",
+                        col_name
+                    )));
+                }
+            }
             let intervals = boundaries
                 .windows(2)
                 .map(|pair| {
@@ -258,11 +280,7 @@ impl EqualFrequencyDiscretizer {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// EqualWidthDiscretizer
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Discretizer that divides a column into bins of equal width.
+/// Divides a column into bins of equal width.
 pub struct EqualWidthDiscretizer {
     pub columns: Vec<String>,
     pub bins: usize,
@@ -281,8 +299,21 @@ impl EqualWidthDiscretizer {
 
     /// Fit the discretizer by computing min and max and then equal-width intervals.
     pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
+        if self.bins < 1 {
+            return Err(FeatureFactoryError::InvalidParameter(
+                "Number of bins must be at least 1".to_string(),
+            ));
+        }
         for col_name in &self.columns {
+            // Validate numeric column.
+            validate_numeric_column(df, col_name)?;
             let (min_val, max_val) = compute_min_max(df, col_name).await?;
+            if (max_val - min_val).abs() < 1e-6 {
+                return Err(FeatureFactoryError::InvalidParameter(format!(
+                    "Column {} is constant (min == max), cannot discretize into equal-width bins",
+                    col_name
+                )));
+            }
             let width = (max_val - min_val) / self.bins as f64;
             let intervals = (0..self.bins)
                 .map(|i| {
@@ -307,43 +338,8 @@ impl EqualWidthDiscretizer {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// DecisionTreeDiscretizer
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Discretizer that uses decision tree predictions to discretize a column.
-/// Not implemented.
-pub struct DecisionTreeDiscretizer {
-    pub columns: Vec<String>,
-}
-
-impl DecisionTreeDiscretizer {
-    /// Create a new DecisionTreeDiscretizer.
-    pub fn new(columns: Vec<String>) -> Self {
-        Self { columns }
-    }
-
-    /// Not implemented.
-    pub async fn fit(&mut self, _df: &DataFrame) -> FeatureFactoryResult<()> {
-        Err(FeatureFactoryError::NotImplemented(
-            "DecisionTreeDiscretizer is not implemented".to_string(),
-        ))
-    }
-
-    /// Not implemented.
-    pub fn transform(&self, _df: DataFrame) -> FeatureFactoryResult<DataFrame> {
-        Err(FeatureFactoryError::NotImplemented(
-            "DecisionTreeDiscretizer is not implemented".to_string(),
-        ))
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// GeometricWidthDiscretizer
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Discretizer that divides a column into bins whose boundaries follow a geometric progression.
-/// The column values must be positive.
+/// Divides a column into bins where boundaries follow a geometric progression.
+/// The column values must be positive and non-zero.
 pub struct GeometricWidthDiscretizer {
     pub columns: Vec<String>,
     pub bins: usize,
@@ -363,7 +359,14 @@ impl GeometricWidthDiscretizer {
     /// Fit the discretizer by computing min and max and then generating geometric intervals.
     /// Returns an error if any column has non-positive values.
     pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
+        if self.bins < 1 {
+            return Err(FeatureFactoryError::InvalidParameter(
+                "Number of bins must be at least 1".to_string(),
+            ));
+        }
         for col_name in &self.columns {
+            // Validate numeric column.
+            validate_numeric_column(df, col_name)?;
             let (min_val, max_val) = compute_min_max(df, col_name).await?;
             if min_val <= 0.0 {
                 return Err(FeatureFactoryError::DataFusionError(

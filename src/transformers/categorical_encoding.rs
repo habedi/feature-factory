@@ -1,28 +1,71 @@
-//! # Categorical Encoding Transformers
+//! ## Transformers for encoding categorical features
 //!
-//! This module provides several categorical encoding strategies to transform categorical
-//! columns into numeric representations.
+//! This module provides several transformers (or encoders) for mapping categorical features into numerical values.
 //!
-//! The encoders include:
+//! Currently, the following transformers are implemented:
+//!
 //! - **OneHotEncoder:** Expands each categorical column into multiple binary columns, one per distinct category.
 //! - **CountFrequencyEncoder:** Replaces each category with its count (or frequency).
 //! - **OrdinalEncoder:** Replaces each category with an ordinal (ordered integer) value.
 //! - **MeanEncoder:** Replaces each category with the mean of a target variable.
-//! - **WoEEncoder:** Replaces each category with its weight of evidence.
+//! - **WoEEncoder:** Replaces each category with its weight of evidence (which is the logarithm of the ratio of the probability of a “good” outcome to a “bad” outcome.)
 //! - **RareLabelEncoder:** Groups infrequent categories into a single “rare” label.
 //!
-//! Each encoder exposes a similar API with a constructor, an asynchronous `fit` method
-//! to learn necessary mappings from a training DataFrame, and a `transform` method that applies
-//! the encoding to a DataFrame. Errors from underlying DataFusion operations are wrapped in a custom error type.
+//! Each transformer returns a new DataFrame with the applied encodings to the specified columns.
+//! Errors are returned as `FeatureFactoryError` and results are wrapped in `FeatureFactoryResult`.
 
 use crate::exceptions::{FeatureFactoryError, FeatureFactoryResult};
 use arrow::array::Array;
+use arrow::datatypes::DataType;
 use datafusion::functions_aggregate::expr_fn::{avg, count};
 use datafusion::logical_expr::{col, lit, Case as DFCase, Expr};
 use datafusion::prelude::*;
 use std::collections::HashMap;
 
-/// Helper to build a CASE WHEN expression given a mapping from category strings to values.
+/// Validates that a column exists and is of Utf8 type.
+fn validate_string_column(df: &DataFrame, col_name: &str) -> FeatureFactoryResult<()> {
+    let field = df.schema().field_with_name(None, col_name).map_err(|_| {
+        FeatureFactoryError::MissingColumn(format!("Column '{}' not found", col_name))
+    })?;
+    if field.data_type() != &DataType::Utf8 {
+        return Err(FeatureFactoryError::InvalidParameter(format!(
+            "Column '{}' must be of type Utf8, but found {:?}",
+            col_name,
+            field.data_type()
+        )));
+    }
+    Ok(())
+}
+
+/// Validates that all columns in `cols` exist and are of Utf8 type.
+fn validate_string_columns(df: &DataFrame, cols: &[String]) -> FeatureFactoryResult<()> {
+    for col in cols {
+        validate_string_column(df, col)?;
+    }
+    Ok(())
+}
+
+/// Validates that a column exists and is numeric (Float64 or Int64).
+fn validate_numeric_column(df: &DataFrame, col_name: &str) -> FeatureFactoryResult<()> {
+    let field = df.schema().field_with_name(None, col_name).map_err(|_| {
+        FeatureFactoryError::MissingColumn(format!("Column '{}' not found", col_name))
+    })?;
+    match field.data_type() {
+        DataType::Float64 | DataType::Int64 => Ok(()),
+        dt => Err(FeatureFactoryError::InvalidParameter(format!(
+            "Column '{}' must be numeric (Float64 or Int64), but found {:?}",
+            col_name, dt
+        ))),
+    }
+}
+
+/// Sanitizes a category string so that it can be safely used as part of a column name.
+/// Non-alphanumeric characters are replaced with underscores.
+fn sanitize_category(cat: &str) -> String {
+    cat.replace(|c: char| !c.is_alphanumeric(), "_")
+}
+
+/// Helper function to build a CASE WHEN expression given a mapping from category strings to values.
 /// For each pair, the expression generated is:
 /// `WHEN <col> = lit(<category>) THEN lit(<encoded_value>)`
 /// If provided, `default` is used as the ELSE branch; otherwise, the original column is returned.
@@ -48,11 +91,12 @@ fn build_case_expr<T: Clone + 'static + datafusion::logical_expr::Literal>(
 }
 
 /// Extract distinct string values for a given column from a DataFrame.
-/// This helper is used by OneHotEncoder and OrdinalEncoder.
 async fn extract_distinct_values(
     df: &DataFrame,
     col_name: &str,
 ) -> FeatureFactoryResult<Vec<String>> {
+    // Validate that the column is of string type.
+    validate_string_column(df, col_name)?;
     let distinct_df = df.clone().select(vec![col(col_name)])?.distinct()?;
     let batches = distinct_df
         .collect()
@@ -83,6 +127,7 @@ async fn extract_count_mapping(
     df: &DataFrame,
     col_name: &str,
 ) -> FeatureFactoryResult<HashMap<String, i64>> {
+    validate_string_column(df, col_name)?;
     let grouped = df
         .clone()
         .aggregate(vec![col(col_name)], vec![count(col(col_name)).alias("cnt")])
@@ -117,7 +162,7 @@ async fn extract_count_mapping(
     Ok(map)
 }
 
-/// Generic helper to apply a mapping to each target column in a DataFrame.
+/// Generic helper function to apply a mapping to each target column in a DataFrame.
 /// For each field, if the column is in `target_cols` and a mapping is available via `mapping_fn`,
 /// then the function replaces the column with a CASE–WHEN expression; otherwise, the original
 /// column is retained. The `default_fn` closure produces a default expression for a given column name.
@@ -147,11 +192,7 @@ fn apply_mapping<T: Clone + 'static + datafusion::logical_expr::Literal>(
     df.select(exprs).map_err(FeatureFactoryError::from)
 }
 
-/// ------------------------- OneHotEncoder -------------------------
-///
-/// OneHotEncoder transforms each categorical column into multiple binary columns
-/// (one per distinct category). The new column names are constructed by concatenating
-/// the original column name, an underscore, and the category value.
+/// Expands each categorical column into multiple binary columns, one per distinct category.
 pub struct OneHotEncoder {
     pub columns: Vec<String>,
     /// Mapping from column name to list of distinct category values.
@@ -169,6 +210,7 @@ impl OneHotEncoder {
 
     /// Learn distinct category values for each target column.
     pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
+        validate_string_columns(df, &self.columns)?;
         for col_name in &self.columns {
             let values = extract_distinct_values(df, col_name).await?;
             self.categories.insert(col_name.clone(), values);
@@ -179,15 +221,14 @@ impl OneHotEncoder {
     /// Transform the DataFrame by adding new binary columns for each category.
     pub fn transform(&self, df: DataFrame) -> FeatureFactoryResult<DataFrame> {
         let mut exprs = vec![];
-        // Retain original columns.
         for field in df.schema().fields() {
             exprs.push(col(field.name()));
         }
-        // For each target column and each category, add a new binary column.
         for col_name in &self.columns {
             if let Some(cats) = self.categories.get(col_name) {
                 for cat in cats {
-                    let new_col_name = format!("{}_{}", col_name, cat);
+                    let safe_cat = sanitize_category(cat);
+                    let new_col_name = format!("{}_{}", col_name, safe_cat);
                     let case_expr = Expr::Case(DFCase {
                         expr: None,
                         when_then_expr: vec![(
@@ -205,9 +246,7 @@ impl OneHotEncoder {
     }
 }
 
-/// ------------------------- CountFrequencyEncoder -------------------------
-///
-/// CountFrequencyEncoder replaces each categorical value with its occurrence count in the training data.
+/// Replaces each category in a column with its frequency in the column.
 pub struct CountFrequencyEncoder {
     pub columns: Vec<String>,
     /// Mapping from column to (category -> count)
@@ -225,6 +264,7 @@ impl CountFrequencyEncoder {
 
     /// Compute counts for each category in each target column.
     pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
+        validate_string_columns(df, &self.columns)?;
         for col_name in &self.columns {
             let map = extract_count_mapping(df, col_name).await?;
             self.mapping.insert(col_name.clone(), map);
@@ -249,9 +289,7 @@ impl CountFrequencyEncoder {
     }
 }
 
-/// ------------------------- OrdinalEncoder -------------------------
-///
-/// OrdinalEncoder replaces each category with an ordinal (ordered integer) value.
+/// Replaces each category with an ordinal (ordered integer) value.
 /// Categories are sorted alphabetically and assigned increasing integers starting at 0.
 pub struct OrdinalEncoder {
     pub columns: Vec<String>,
@@ -270,6 +308,7 @@ impl OrdinalEncoder {
 
     /// Learn the ordinal mapping for each target column.
     pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
+        validate_string_columns(df, &self.columns)?;
         for col_name in &self.columns {
             let mut values = extract_distinct_values(df, col_name).await?;
             values.sort();
@@ -300,9 +339,7 @@ impl OrdinalEncoder {
     }
 }
 
-/// ------------------------- MeanEncoder -------------------------
-///
-/// MeanEncoder replaces each category with the mean of a target variable. The target column name must be provided.
+/// Replaces each category with the mean of the target column (variable).
 pub struct MeanEncoder {
     pub columns: Vec<String>,
     pub target: String,
@@ -322,6 +359,8 @@ impl MeanEncoder {
 
     /// For each target column, compute the average of the target variable for each category.
     pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
+        validate_string_columns(df, &self.columns)?;
+        validate_numeric_column(df, &self.target)?;
         for col_name in &self.columns {
             let agg_df = df
                 .clone()
@@ -367,7 +406,7 @@ impl MeanEncoder {
         Ok(())
     }
 
-    /// Transform the DataFrame by replacing each target column's value with the computed mean.
+    /// Transform the DataFrame by replacing each target column's value with the mean.
     pub fn transform(&self, df: DataFrame) -> FeatureFactoryResult<DataFrame> {
         apply_mapping(
             df,
@@ -384,10 +423,8 @@ impl MeanEncoder {
     }
 }
 
-/// ------------------------- WoEEncoder -------------------------
-///
-/// WoEEncoder (Weight of Evidence) replaces each category with a numerical value computed as the logarithm of the ratio of the probability of a “good” outcome to a “bad” outcome.
-/// This encoder assumes a binary target where 1 indicates a good outcome and 0 a bad outcome.
+/// Replaces each category with its weight of evidence (WoE).
+/// WoE is computed as ln((good_rate)/(bad_rate)), assuming a binary target where 1 indicates good and 0 bad.
 pub struct WoEEncoder {
     pub columns: Vec<String>,
     pub target: String,
@@ -408,6 +445,8 @@ impl WoEEncoder {
     /// Fit the encoder by computing counts of good and bad outcomes for each category,
     /// then calculating WoE = ln((good_rate)/(bad_rate)).
     pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
+        validate_string_columns(df, &self.columns)?;
+        validate_numeric_column(df, &self.target)?;
         let overall_df = df
             .clone()
             .aggregate(vec![], vec![count(col(&self.target)).alias("total")])
@@ -515,13 +554,10 @@ impl WoEEncoder {
     }
 }
 
-/// ------------------------- RareLabelEncoder -------------------------
-///
-/// RareLabelEncoder groups infrequent categories (those whose frequency is below a specified threshold)
-/// into a single “rare” label.
+/// Groups infrequent categories into a single “rare” label.
 pub struct RareLabelEncoder {
     pub columns: Vec<String>,
-    pub threshold: f64, // frequency threshold (e.g. 0.05)
+    pub threshold: f64, // frequency threshold (between 0 and 1)
     /// Mapping from column to (category -> encoded label)
     pub mapping: HashMap<String, HashMap<String, String>>,
 }
@@ -538,6 +574,13 @@ impl RareLabelEncoder {
 
     /// Fit the encoder by computing frequencies and marking those below the threshold as "rare".
     pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
+        if self.threshold < 0.0 || self.threshold > 1.0 {
+            return Err(FeatureFactoryError::InvalidParameter(format!(
+                "Threshold {} must be between 0 and 1",
+                self.threshold
+            )));
+        }
+        validate_string_columns(df, &self.columns)?;
         let total_df = df
             .clone()
             .aggregate(vec![], vec![count(lit(1)).alias("total")])
@@ -546,7 +589,7 @@ impl RareLabelEncoder {
             .collect()
             .await
             .map_err(FeatureFactoryError::from)?;
-        let _total = if let Some(batch) = total_batches.first() {
+        let total = if let Some(batch) = total_batches.first() {
             let total_array = batch
                 .column(0)
                 .as_any()
@@ -596,7 +639,7 @@ impl RareLabelEncoder {
                     if !cat_array.is_null(i) {
                         let cat = cat_array.value(i).to_string();
                         let cnt = cnt_array.value(i) as f64;
-                        let freq = cnt / _total;
+                        let freq = cnt / total;
                         let encoded = if freq < self.threshold {
                             "rare".to_string()
                         } else {
