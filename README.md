@@ -5,8 +5,8 @@
 [![Code Coverage](https://img.shields.io/codecov/c/github/habedi/feature-factory?style=flat&labelColor=555555&logo=codecov)](https://codecov.io/gh/habedi/feature-factory)
 [![CodeFactor](https://img.shields.io/codefactor/grade/github/habedi/feature-factory?style=flat&labelColor=555555&logo=codefactor)](https://www.codefactor.io/repository/github/habedi/feature-factory)
 [![Crates.io](https://img.shields.io/crates/v/feature-factory.svg?style=flat&color=fc8d62&logo=rust)](https://crates.io/crates/feature-factory)
-[![Docs.rs](https://img.shields.io/badge/docs.rs-feature-factory-66c2a5?style=flat&labelColor=555555&logo=docs.rs)](https://docs.rs/feature-factory)
-[![Downloads](https://img.shields.io/crates/d/feature-factory?style=flat&labelColor=555555&logo=rust)](https://crates.io/crates/feature-factory)
+[![Docs.rs](https://img.shields.io/badge/docs.rs-feature--factory-66c2a5?style=flat&labelColor=655555&logo=docs.rs)](https://docs.rs/feature-factory)
+[![Downloads](https://img.shields.io/crates/d/feature--factory?style=flat&labelColor=555555&logo=rust)](https://crates.io/crates/feature-factory)
 [![MSRV](https://img.shields.io/badge/MSRV-1.83.0-orange?style=popout-square&logo=rust&label=msrv)](https://github.com/rust-lang/rust/releases/tag/1.83.0)
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-007ec6?style=flat&labelColor=555555&logo=open-source-initiative)](https://github.com/habedi/feature-factory)
 

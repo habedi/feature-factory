@@ -1,7 +1,7 @@
 [package]
 name = "feature-factory"
-version = "0.1.0"
-description = "A feature engineering and selection library for Rust"
+version = "0.1.1"
+description = "A high-performance feature engineering library for Rust"
 repository = "https://github.com/habedi/feature-factory"
 license = "MIT OR Apache-2.0"
 readme = "README.md"
