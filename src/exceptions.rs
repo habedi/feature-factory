@@ -1,11 +1,13 @@
-//! # Feature Factory Custom Errors
+//! # Custom Errors for Feature Factory
 //!
-//! This module defines custom error types for the `feature_factory` library.
-//! Use these errors to signal issues like I/O failures, data parsing errors,
-//! invalid parameters, or unsupported formats.
+//! This module defines custom error types for the Feature Factory library.
+//! It uses the `thiserror` crate to derive the `Error` trait for custom error types.
+//! The `FeatureFactoryError` enum defines different error variants that can be returned by the library.
+//! The `FeatureFactoryResult` type alias is used to simplify error handling in the library.
 
 use thiserror::Error;
 
+/// Custom errors for the `feature_factory` library.
 #[derive(Debug, Error)]
 pub enum FeatureFactoryError {
     /// Wraps underlying I/O errors.
@@ -28,15 +30,20 @@ pub enum FeatureFactoryError {
     #[error("Invalid parameter: {0}")]
     InvalidParameter(String),
 
-    /// Indicates that a specific data format is not supported.
+    /// Indicates that the data format is not supported.
     #[error("Unsupported format: {0}")]
     UnsupportedFormat(String),
 
+    /// Indicates that a feature is not implemented.
     #[error("Not implemented: {0}")]
     NotImplemented(String),
+
+    /// Indicates that the column does not exist in the DataFrame.
+    #[error("Missing column: {0}")]
+    MissingColumn(String),
 }
 
-/// A convenience result type for operations in the `feature_factory` library.
+/// Type alias for results returned by the `feature_factory` library.
 pub type FeatureFactoryResult<T> = std::result::Result<T, FeatureFactoryError>;
 
 #[cfg(test)]
@@ -109,5 +116,13 @@ mod tests {
         let err_msg = format!("{}", err);
         assert!(err_msg.contains("Not implemented:"));
         assert!(err_msg.contains("feature not implemented"));
+    }
+
+    #[test]
+    fn test_missing_column_error() {
+        let err = FeatureFactoryError::MissingColumn("missing column".into());
+        let err_msg = format!("{}", err);
+        assert!(err_msg.contains("Missing column:"));
+        assert!(err_msg.contains("missing column"));
     }
 }
