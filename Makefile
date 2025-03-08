@@ -5,6 +5,9 @@ BINARY := target/release/$(BINARY_NAME)
 PATH := /snap/bin:$(PATH)
 DEBUG_FEATURE_FACTORY := 0
 RUST_BACKTRACE := 1
+ASSET_DIR := assets
+TEST_DATA_DIR := tests/testdata
+SHELL := /bin/bash
 
 # Default target
 .DEFAULT_GOAL := help
@@ -42,12 +45,13 @@ run: build ## Build and run the binary
 clean: ## Remove generated and temporary files
 	@echo "Cleaning up..."
 	@cargo clean
+	@rm -f $(ASSET_DIR)/*.svg && echo "Removed SVG files; might want to run 'make figs' to regenerate them."
 
 .PHONY: install-snap
 install-snap: ## Install a few dependencies using Snapcraft
 	@echo "Installing the snap package..."
 	@sudo apt-get update
-	@sudo apt-get install -y snapd
+	@sudo apt-get install -y snapd graphviz wget
 	@sudo snap refresh
 	@sudo snap install rustup --classic
 
@@ -57,6 +61,7 @@ install-deps: install-snap ## Install development dependencies
 	@rustup component add rustfmt clippy
 	@cargo install cargo-tarpaulin
 	@cargo install cargo-audit
+	@cargo install cargo-nextest
 
 .PHONY: lint
 lint: format ## Run the linters
@@ -82,3 +87,23 @@ audit: ## Run security audit on Rust dependencies
 doc: format ## Generate the documentation
 	@echo "Generating documentation..."
 	@cargo doc --no-deps --document-private-items
+
+.PHONE: figs
+figs: ## Generate the figures in the assets directory
+	@echo "Generating figures..."
+	@$(SHELL) $(ASSET_DIR)/make_figures.sh $(ASSET_DIR)
+
+.PHONY: fix-lint
+fix_lint: ## Fix the linter warnings
+	@echo "Fixing linter warnings..."
+	@cargo clippy --fix --allow-dirty --allow-staged
+
+.PHONY: testdata
+testdata: ## Download the datasets used in tests
+	@echo "Downloading test data..."
+	@$(SHELL) $(TEST_DATA_DIR)/download_datasets.sh $(TEST_DATA_DIR)
+
+.PHONY: nextest
+nextest: ## Run tests using nextest
+	@echo "Running tests using nextest..."
+	@DEBUG_FEATURE_FACTORY=$(DEBUG_FEATURE_FACTORY) RUST_BACKTRACE=$(RUST_BACKTRACE) cargo nextest run

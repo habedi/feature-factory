@@ -4,12 +4,9 @@ use arrow::record_batch::RecordBatch;
 use datafusion::datasource::memory::MemTable;
 use datafusion::prelude::*;
 use std::sync::Arc;
-use tokio;
 
 use feature_factory::exceptions::FeatureFactoryResult;
-use feature_factory::transformers::outlier_handling::{
-    ArbitraryOutlierCapper, OutlierTrimmer, Winsorizer,
-};
+use feature_factory::transformers::outliers::{ArbitraryOutlierCapper, OutlierTrimmer, Winsorizer};
 
 /// Helper function to create a DataFrame with a single Float64 column "value" using the provided values.
 async fn create_df(values: Vec<f64>) -> DataFrame {
@@ -47,7 +44,7 @@ async fn test_arbitrary_outlier_capper() -> FeatureFactoryResult<()> {
         .downcast_ref::<Float64Array>()
         .expect("Expected Float64Array");
     // Expected: 1.0 -> 2.0, 5.0 unchanged, 10.0 unchanged, 20.0 -> 15.0.
-    let expected = vec![2.0, 5.0, 10.0, 15.0];
+    let expected = [2.0, 5.0, 10.0, 15.0];
     for i in 0..array.len() {
         assert!(
             (array.value(i) - expected[i]).abs() < 1e-6,

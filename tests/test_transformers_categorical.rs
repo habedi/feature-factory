@@ -5,10 +5,9 @@ use arrow::datatypes::{DataType, Field, Schema};
 use arrow::record_batch::RecordBatch;
 use datafusion::datasource::memory::MemTable;
 use datafusion::prelude::*;
-use tokio;
 
 use feature_factory::exceptions::FeatureFactoryResult;
-use feature_factory::transformers::categorical_encoding::{
+use feature_factory::transformers::categorical::{
     CountFrequencyEncoder, MeanEncoder, OneHotEncoder, OrdinalEncoder, RareLabelEncoder, WoEEncoder,
 };
 

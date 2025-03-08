@@ -1,23 +1,24 @@
-//! ## Transformers for imputing missing values
+//! ## Missing Value Imputation Transformers
 //!
-//! This module provides several transformers (or imputers) for dealing with missing values.
+//! This module provides transformers for handling missing values in both numeric and categorical columns.
 //!
-//! Currently, the following transformers are implemented:
+//! ### Available Transformers
 //!
-//! - **MeanMedianImputer**: Imputes numeric columns using the mean (median is not implemented in lazy mode).
-//! - **ArbitraryNumberImputer**: Imputes numeric columns using a fixed arbitrary number.
-//! - **EndTailImputer**: Imputes numeric columns using a percentile value computed from the data (e.g. for tail imputation).
-//! - **CategoricalImputer**: Imputes categorical columns using the mode (or a provided default).
-//! - **AddMissingIndicator**: Adds additional Boolean indicator columns for missing values.
-//! - **DropMissingData**: Filters out rows that contain any missing values in the specified columns.
+//! - [`MeanMedianImputer`]: Fills missing values in numeric columns using the mean (median is not available yet).
+//! - [`ArbitraryNumberImputer`]: Replaces missing numeric values with a fixed arbitrary number.
+//! - [`EndTailImputer`]: Imputes numeric columns using a percentile value (e.g., tail imputation).
+//! - [`CategoricalImputer`]: Fills missing categorical values using the mode or a predefined default.
+//! - [`AddMissingIndicator`]: Creates Boolean indicator columns to flag missing values.
+//! - [`DropMissingData`]: Removes rows that contain missing values in the specified columns.
 //!
-//! Each transformer returns a new DataFrame with the applied imputation strategy to the specified columns.
-//! Errors are returned as `FeatureFactoryError` and results are wrapped in `FeatureFactoryResult`.
+//! Each transformer returns a new DataFrame with missing values handled accordingly.
+//! Errors are returned as [`FeatureFactoryError`], and results are wrapped in [`FeatureFactoryResult`].
 
 use crate::exceptions::{FeatureFactoryError, FeatureFactoryResult};
+use crate::impl_transformer;
+use datafusion::dataframe::DataFrame;
 use datafusion::functions_aggregate::expr_fn::{approx_percentile_cont, avg, count};
 use datafusion::logical_expr::{col, lit, not, Case as DFCase, Expr};
-use datafusion::prelude::*;
 use datafusion::scalar::ScalarValue;
 use std::collections::HashMap;
 
@@ -77,34 +78,32 @@ where
     df.select(exprs).map_err(FeatureFactoryError::from)
 }
 
-/// This enum defines the imputation strategy for the `MeanMedianImputer`.
-/// Currently, only the mean strategy is implemented/supported.
-#[derive(Debug, Clone, Copy)]
-pub enum ImputeStrategy {
-    Mean,
-    Median, // Not implemented in lazy mode.
-}
-
-/// Replaces missing values with the mean (or median) value for numeric columns.
+/// Replaces missing values with the mean ~~(or median)~~ value for numeric columns.
 pub struct MeanMedianImputer {
     pub columns: Vec<String>,
     pub strategy: ImputeStrategy,
     pub impute_values: HashMap<String, f64>,
+    fitted: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ImputeStrategy {
+    Mean,
+    Median, // Not implemented in DF mode.
 }
 
 impl MeanMedianImputer {
-    /// Create a new imputer for the given columns and strategy.
     pub fn new(columns: Vec<String>, strategy: ImputeStrategy) -> Self {
         Self {
             columns,
             strategy,
             impute_values: HashMap::new(),
+            fitted: false,
         }
     }
 
-    /// For each target column, compute the mean value via an aggregate query.
+    /// Fit computes imputation parameters without materializing the input.
     pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
-        // Validate target columns exist.
         validate_columns(df, &self.columns)?;
         for col_name in &self.columns {
             match self.strategy {
@@ -139,16 +138,24 @@ impl MeanMedianImputer {
                 }
             }
         }
+        self.fitted = true;
         Ok(())
     }
 
-    /// Returns a new DataFrame where, for each target column, missing values are replaced with the mean.
+    /// Transform applies imputation and returns a modified DataFrame.
     pub fn transform(&self, df: DataFrame) -> FeatureFactoryResult<DataFrame> {
-        // Validate that columns exist before transforming.
+        if !self.fitted {
+            return Err(FeatureFactoryError::FitNotCalled);
+        }
         validate_columns(&df, &self.columns)?;
         apply_imputation(df, &self.columns, |name| {
             self.impute_values.get(name).map(|&v| lit(v))
         })
+    }
+
+    // This transformer is stateful.
+    fn inherent_is_stateful(&self) -> bool {
+        true
     }
 }
 
@@ -159,28 +166,30 @@ pub struct ArbitraryNumberImputer {
 }
 
 impl ArbitraryNumberImputer {
-    /// Create a new arbitrary number imputer for the given columns.
     pub fn new(columns: Vec<String>, number: f64) -> Self {
         Self { columns, number }
     }
 
-    /// This transformer is stateless, so fit does nothing.
-    pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
-        // Validate target columns and check that the fixed number is finite.
-        validate_columns(df, &self.columns)?;
+    /// Stateless transformer: fit does nothing.
+    pub async fn fit(&mut self, _df: &DataFrame) -> FeatureFactoryResult<()> {
+        Ok(())
+    }
+
+    /// Transform validates inputs and applies imputation.
+    pub fn transform(&self, df: DataFrame) -> FeatureFactoryResult<DataFrame> {
         if !self.number.is_finite() {
             return Err(FeatureFactoryError::InvalidParameter(format!(
                 "Fixed number {} must be finite",
                 self.number
             )));
         }
-        Ok(())
-    }
-
-    /// Returns a new DataFrame where, for each target column, missing values are replaced with the fixed number.
-    pub fn transform(&self, df: DataFrame) -> FeatureFactoryResult<DataFrame> {
         validate_columns(&df, &self.columns)?;
         apply_imputation(df, &self.columns, |_| Some(lit(self.number)))
+    }
+
+    // This transformer is stateless.
+    fn inherent_is_stateful(&self) -> bool {
+        false
     }
 }
 
@@ -189,21 +198,21 @@ pub struct EndTailImputer {
     pub columns: Vec<String>,
     pub percentile: f64,
     pub impute_values: HashMap<String, f64>,
+    fitted: bool,
 }
 
 impl EndTailImputer {
-    /// Create a new end-tail imputer for the given columns and percentile.
     pub fn new(columns: Vec<String>, percentile: f64) -> Self {
         Self {
             columns,
             percentile,
             impute_values: HashMap::new(),
+            fitted: false,
         }
     }
 
-    /// For each target column, compute the approximate percentile value via an aggregate query.
+    /// Fit computes the percentile for each column.
     pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
-        // Validate target columns and check that the percentile is valid.
         validate_columns(df, &self.columns)?;
         if self.percentile < 0.0 || self.percentile > 1.0 {
             return Err(FeatureFactoryError::InvalidParameter(format!(
@@ -239,15 +248,24 @@ impl EndTailImputer {
                 }
             }
         }
+        self.fitted = true;
         Ok(())
     }
 
-    /// Returns a new DataFrame where, for each target column, missing values are replaced with the computed percentile.
+    /// Transform applies the computed percentile imputation.
     pub fn transform(&self, df: DataFrame) -> FeatureFactoryResult<DataFrame> {
+        if !self.fitted {
+            return Err(FeatureFactoryError::FitNotCalled);
+        }
         validate_columns(&df, &self.columns)?;
         apply_imputation(df, &self.columns, |name| {
             self.impute_values.get(name).map(|&v| lit(v))
         })
+    }
+
+    // This transformer is stateful.
+    fn inherent_is_stateful(&self) -> bool {
+        true
     }
 }
 
@@ -256,22 +274,24 @@ pub struct CategoricalImputer {
     pub columns: Vec<String>,
     pub default: Option<String>,
     pub impute_values: HashMap<String, String>,
+    fitted: bool,
 }
 
 impl CategoricalImputer {
-    /// Create a new categorical imputer for the given columns and optional default.
     pub fn new(columns: Vec<String>, default: Option<String>) -> Self {
         Self {
             columns,
             default,
             impute_values: HashMap::new(),
+            fitted: false,
         }
     }
 
-    /// For each target column, if no default is provided, compute the mode via grouping and counting.
+    /// Fit computes the mode for each column when no default is provided.
     pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
         validate_columns(df, &self.columns)?;
         if self.default.is_some() {
+            self.fitted = true;
             return Ok(());
         }
         for col_name in &self.columns {
@@ -300,11 +320,15 @@ impl CategoricalImputer {
                 }
             }
         }
+        self.fitted = true;
         Ok(())
     }
 
-    /// Returns a new DataFrame where, for each target column, missing values are replaced with the computed mode (or the provided default).
+    /// Transform applies the categorical imputation.
     pub fn transform(&self, df: DataFrame) -> FeatureFactoryResult<DataFrame> {
+        if !self.fitted {
+            return Err(FeatureFactoryError::FitNotCalled);
+        }
         validate_columns(&df, &self.columns)?;
         apply_imputation(df, &self.columns, |name| {
             if let Some(default_val) = &self.default {
@@ -316,6 +340,11 @@ impl CategoricalImputer {
             }
         })
     }
+
+    // This transformer is stateful.
+    fn inherent_is_stateful(&self) -> bool {
+        true
+    }
 }
 
 /// Adds additional Boolean indicator columns for missing values.
@@ -325,7 +354,6 @@ pub struct AddMissingIndicator {
 }
 
 impl AddMissingIndicator {
-    /// Create a new missing indicator transformer for the given columns.
     pub fn new(columns: Vec<String>, suffix: Option<String>) -> Self {
         Self {
             columns,
@@ -333,16 +361,13 @@ impl AddMissingIndicator {
         }
     }
 
-    /// This transformer is stateless, so fit does nothing.
-    pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
-        // Validate that target columns exist.
-        validate_columns(df, &self.columns)?;
+    /// Stateless transformer: fit does nothing.
+    pub async fn fit(&mut self, _df: &DataFrame) -> FeatureFactoryResult<()> {
         Ok(())
     }
 
-    /// Returns a new DataFrame with additional Boolean indicator columns for missing values.
+    /// Transform validates columns and returns the modified DataFrame.
     pub fn transform(&self, df: DataFrame) -> FeatureFactoryResult<DataFrame> {
-        // Validate that target columns exist.
         validate_columns(&df, &self.columns)?;
         let mut exprs = vec![];
         for field in df.schema().fields() {
@@ -358,6 +383,11 @@ impl AddMissingIndicator {
         }
         df.select(exprs).map_err(FeatureFactoryError::from)
     }
+
+    // This transformer is stateless.
+    fn inherent_is_stateful(&self) -> bool {
+        false
+    }
 }
 
 /// Removes rows that contain a missing value in the given columns.
@@ -368,26 +398,23 @@ pub struct DropMissingData {
 }
 
 impl DropMissingData {
-    /// Create a new drop-missing-data transformer that checks all columns.
     pub fn new() -> Self {
         Self { columns: None }
     }
 
-    /// Create a new drop-missing-data transformer that checks only the specified columns.
     pub fn with_columns(columns: Vec<String>) -> Self {
         Self {
             columns: Some(columns),
         }
     }
 
-    /// This transformer is stateless, so fit does nothing.
-    pub async fn fit(&mut self, _df: &DataFrame) -> crate::exceptions::FeatureFactoryResult<()> {
+    /// Stateless transformer: fit does nothing.
+    pub async fn fit(&mut self, _df: &DataFrame) -> FeatureFactoryResult<()> {
         Ok(())
     }
 
-    /// Returns a new DataFrame that excludes rows with any missing values in the given columns.
-    pub fn transform(&self, df: DataFrame) -> crate::exceptions::FeatureFactoryResult<DataFrame> {
-        // Determine which columns to check. If none provided, check all.
+    /// Transform applies filtering and returns the modified DataFrame.
+    pub fn transform(&self, df: DataFrame) -> FeatureFactoryResult<DataFrame> {
         let target_columns = if let Some(ref cols) = self.columns {
             cols.clone()
         } else {
@@ -397,8 +424,6 @@ impl DropMissingData {
                 .map(|f| f.name().to_string())
                 .collect()
         };
-
-        // Build a predicate for each target column: col IS NOT NULL.
         let predicates: Vec<Expr> = target_columns
             .iter()
             .map(|col_name| col(col_name).is_not_null())
@@ -410,6 +435,11 @@ impl DropMissingData {
         df.filter(combined)
             .map_err(crate::exceptions::FeatureFactoryError::from)
     }
+
+    // This transformer is stateless.
+    fn inherent_is_stateful(&self) -> bool {
+        false
+    }
 }
 
 impl Default for DropMissingData {
@@ -417,3 +447,11 @@ impl Default for DropMissingData {
         Self::new()
     }
 }
+
+// Implement the Transformer trait for the transformers in this module.
+impl_transformer!(MeanMedianImputer);
+impl_transformer!(ArbitraryNumberImputer);
+impl_transformer!(EndTailImputer);
+impl_transformer!(CategoricalImputer);
+impl_transformer!(AddMissingIndicator);
+impl_transformer!(DropMissingData);

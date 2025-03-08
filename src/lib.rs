@@ -1,3 +1,4 @@
 pub mod exceptions;
-mod settings;
+mod logging;
+pub mod pipeline;
 pub mod transformers;

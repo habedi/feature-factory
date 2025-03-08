@@ -58,7 +58,7 @@ async fn test_mean_imputation() -> FeatureFactoryResult<()> {
 
     // The original column "a" had values [1.0, 2.0, null, 4.0].
     // The computed mean should be (1.0 + 2.0 + 4.0) / 3 ≈ 2.3333333.
-    let expected = vec![Some(1.0), Some(2.0), Some(7.0 / 3.0), Some(4.0)];
+    let expected = [Some(1.0), Some(2.0), Some(7.0 / 3.0), Some(4.0)];
     for (i, exp) in expected.iter().enumerate() {
         let value = if a_array.is_null(i) {
             None
@@ -80,6 +80,7 @@ async fn test_mean_imputation() -> FeatureFactoryResult<()> {
 async fn test_arbitrary_number_imputation() -> FeatureFactoryResult<()> {
     let df = create_dataframe().await;
     let imputer = ArbitraryNumberImputer::new(vec!["a".to_string()], 99.0);
+    // For stateless transformers, fit is empty so we directly call transform.
     let transformed = imputer.transform(df)?;
     let batches = transformed.collect().await?;
     let batch = batches.first().expect("Expected at least one batch");
@@ -90,7 +91,7 @@ async fn test_arbitrary_number_imputation() -> FeatureFactoryResult<()> {
         .downcast_ref::<Float64Array>()
         .expect("Expected Float64Array");
 
-    let expected = vec![Some(1.0), Some(2.0), Some(99.0), Some(4.0)];
+    let expected = [Some(1.0), Some(2.0), Some(99.0), Some(4.0)];
     for (i, exp) in expected.iter().enumerate() {
         let value = if a_array.is_null(i) {
             None
@@ -124,7 +125,7 @@ async fn test_end_tail_imputation() -> FeatureFactoryResult<()> {
         .expect("Expected Float64Array");
 
     // With our data [1.0, 2.0, 4.0] (ignoring null), the median is 2.0.
-    let expected = vec![Some(1.0), Some(2.0), Some(2.0), Some(4.0)];
+    let expected = [Some(1.0), Some(2.0), Some(2.0), Some(4.0)];
     for (i, exp) in expected.iter().enumerate() {
         let value = if a_array.is_null(i) {
             None
@@ -158,7 +159,7 @@ async fn test_categorical_imputation() -> FeatureFactoryResult<()> {
         .expect("Expected StringArray");
 
     // For column "b", our values are ["x", null, "x", "y"]. The mode should be "x".
-    let expected = vec![Some("x"), Some("x"), Some("x"), Some("y")];
+    let expected = [Some("x"), Some("x"), Some("x"), Some("y")];
     for (i, exp) in expected.iter().enumerate() {
         let value = if b_array.is_null(i) {
             None
@@ -194,7 +195,7 @@ async fn test_add_missing_indicator() -> FeatureFactoryResult<()> {
         .downcast_ref::<arrow::array::BooleanArray>()
         .expect("Expected BooleanArray");
 
-    let expected = vec![false, false, true, false];
+    let expected = [false, false, true, false];
     for i in 0..expected.len() {
         assert_eq!(
             indicator_array.value(i),
@@ -217,11 +218,11 @@ async fn test_drop_missing_data() -> FeatureFactoryResult<()> {
     let batch = batches.first().expect("Expected at least one batch");
 
     // Original rows:
-    // Row 1: (1.0, "x") -> no missing.
-    // Row 2: (2.0, null) -> missing.
-    // Row 3: (null, "x") -> missing.
-    // Row 4: (4.0, "y") -> no missing.
-    // Expect only rows 1 and 4.
+    // Row 0: (1.0, "x") -> no missing.
+    // Row 1: (2.0, null) -> missing.
+    // Row 2: (null, "x") -> missing.
+    // Row 3: (4.0, "y") -> no missing.
+    // Expect only rows 0 and 3.
     assert_eq!(
         batch.num_rows(),
         2,
@@ -284,8 +285,9 @@ async fn test_arbitrary_number_imputer_missing_column() -> FeatureFactoryResult<
 async fn test_arbitrary_number_imputer_invalid_number() -> FeatureFactoryResult<()> {
     let df = create_dataframe().await;
     // Use an invalid number (NaN)
-    let mut imputer = ArbitraryNumberImputer::new(vec!["a".to_string()], f64::NAN);
-    let result = imputer.fit(&df).await;
+    let imputer = ArbitraryNumberImputer::new(vec!["a".to_string()], f64::NAN);
+    // For stateless transformers, fit is empty so we directly call transform.
+    let result = imputer.transform(df);
     assert!(
         result.is_err(),
         "Expected error when using an invalid (NaN) number"
@@ -415,8 +417,8 @@ async fn test_drop_missing_data_default_all_columns() -> FeatureFactoryResult<()
 
     // Our test DF has 4 rows:
     // Row 0: a=1.0, b="x"       -> complete.
-    // Row 1: a=2.0, b=null      -> missing in b.
-    // Row 2: a=null, b="x"      -> missing in a.
+    // Row 1: a=2.0, b=null      -> missing.
+    // Row 2: a=null, b="x"      -> missing.
     // Row 3: a=4.0, b="y"       -> complete.
     // Expect only rows 0 and 3.
     assert_eq!(

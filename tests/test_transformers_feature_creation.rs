@@ -70,7 +70,7 @@ async fn test_math_features() {
         ("product".to_string(), col("x").mul(col("y"))),
     ];
     let mut transformer = MathFeatures::new(features);
-    transformer.fit(&df).await.unwrap();
+    transformer.fit(&df).await.unwrap(); // fit is empty
     let transformed_df = transformer.transform(df).unwrap();
     let batches = transformed_df.collect().await.unwrap();
     let batch = &batches[0];
@@ -85,8 +85,8 @@ async fn test_math_features() {
         .as_any()
         .downcast_ref::<Float64Array>()
         .unwrap();
-    let expected_sum = vec![5.0_f64, 7.0_f64, 9.0_f64];
-    let expected_product = vec![4.0_f64, 10.0_f64, 18.0_f64];
+    let expected_sum = [5.0_f64, 7.0_f64, 9.0_f64];
+    let expected_product = [4.0_f64, 10.0_f64, 18.0_f64];
     for i in 0..sum_array.len() {
         assert_abs_diff_eq!(sum_array.value(i), expected_sum[i], epsilon = 1e-6);
         assert_abs_diff_eq!(product_array.value(i), expected_product[i], epsilon = 1e-6);
@@ -117,7 +117,7 @@ async fn test_relative_features() {
         ),
     ];
     let mut transformer = RelativeFeatures::new(features);
-    transformer.fit(&df).await.unwrap();
+    transformer.fit(&df).await.unwrap(); // fit is empty
     let transformed_df = transformer.transform(df).unwrap();
     let batches = transformed_df.collect().await.unwrap();
     let batch = &batches[0];
@@ -136,9 +136,9 @@ async fn test_relative_features() {
         .as_any()
         .downcast_ref::<Float64Array>()
         .unwrap();
-    let expected_ratio = vec![5.0_f64, 5.0_f64, 6.0_f64];
-    let expected_difference = vec![8.0_f64, 16.0_f64, 25.0_f64];
-    let expected_pct_change = vec![4.0_f64, 4.0_f64, 5.0_f64];
+    let expected_ratio = [5.0_f64, 5.0_f64, 6.0_f64];
+    let expected_difference = [8.0_f64, 16.0_f64, 25.0_f64];
+    let expected_pct_change = [4.0_f64, 4.0_f64, 5.0_f64];
     for i in 0..ratio_array.len() {
         assert_abs_diff_eq!(ratio_array.value(i), expected_ratio[i], epsilon = 1e-6);
         assert_abs_diff_eq!(
@@ -172,7 +172,7 @@ async fn test_cyclical_features() {
         ),
     ];
     let mut transformer = CyclicalFeatures::new(features);
-    transformer.fit(&df).await.unwrap();
+    transformer.fit(&df).await.unwrap(); // fit is empty
     let transformed_df = transformer.transform(df).unwrap();
     let batches = transformed_df.collect().await.unwrap();
     let batch = &batches[0];
@@ -207,7 +207,7 @@ async fn test_cyclical_features() {
 #[should_panic(expected = "feature name cannot be empty")]
 async fn test_math_features_empty_name() {
     // Expect a panic if MathFeatures is constructed with an empty feature name.
-    let _transformer = MathFeatures::new(vec![("".to_string(), col("x").add(col("y")))]);
+    let _ = MathFeatures::new(vec![("".to_string(), col("x").add(col("y")))]);
 }
 
 #[tokio::test]
@@ -220,11 +220,12 @@ async fn test_relative_features_missing_column() {
         "nonexistent".to_string(),
         RelativeOperation::Ratio,
     )];
-    let mut transformer = RelativeFeatures::new(features);
-    let result = transformer.fit(&df).await;
+    let transformer = RelativeFeatures::new(features);
+    // Since fit is empty, error is triggered in transform.
+    let result = transformer.transform(df);
     assert!(
         result.is_err(),
-        "Expected error for missing reference column"
+        "Expected error for missing reference column in RelativeFeatures transform"
     );
 }
 

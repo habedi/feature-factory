@@ -1,21 +1,22 @@
-//! ## Transformers for extracting datetime-based features
+//! ## Datetime Feature Transformers
 //!
-//! This module implements transformers for extracting features from datetime values.
+//! This module provides transformers to extract or calculate features from datetime data.
 //!
-//! Currently, the following transformers are implemented:
+//! ### Available Transformers
 //!
-//! - **DatetimeFeatures:** Extract features from datetime variables (year, month, day, hour, minute, second, weekday).
-//! - **DatetimeSubtraction:** Compute time differences between datetime variables using a specified time unit.
+//! - [`DatetimeFeatures`]: Extracts features such as year, month, day, hour, minute, second, and weekday from datetime columns.
+//! - [`DatetimeSubtraction`]: Computes differences between datetime columns in specified units (seconds, minutes, hours, and days).
 //!
-//! Each transformer provides a constructor, an (async) `fit` method (if needed), and a `transform` method
-//! that returns a new DataFrame with the new features added.
-//! Errors are returned as `FeatureFactoryError` and results are wrapped in `FeatureFactoryResult`.
+//! Each transformer returns a new DataFrame with the added or modified columns.
+//! Errors are returned as `FeatureFactoryError`, and successful transformations are wrapped in `FeatureFactoryResult`.
 
 use crate::exceptions::{FeatureFactoryError, FeatureFactoryResult};
+use crate::impl_transformer;
 use datafusion::arrow::datatypes::DataType;
-use datafusion::prelude::*;
+use datafusion::dataframe::DataFrame;
 use datafusion_expr::{col, lit, Expr};
 use datafusion_functions::datetime::{date_part, to_unixtime};
+use std::ops::{Div, Sub};
 
 /// Validates that a column exists and is of a datetime type (Timestamp, Date32, or Date64).
 fn validate_datetime_column(df: &DataFrame, col_name: &str) -> FeatureFactoryResult<()> {
@@ -44,26 +45,22 @@ impl DatetimeFeatures {
         Self { columns }
     }
 
-    /// Validates that each specified datetime column exists and is of a valid datetime type.
-    pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
-        for col_name in &self.columns {
-            validate_datetime_column(df, col_name)?;
-        }
+    /// Stateless transformer: fit does nothing.
+    pub async fn fit(&mut self, _df: &DataFrame) -> FeatureFactoryResult<()> {
         Ok(())
     }
 
-    /// Transforms the DataFrame by appending extracted datetime features.
-    /// Returns a new DataFrame with original columns plus:
-    /// `<column>_year`, `<column>_month`, `<column>_day`, `<column>_hour`,
-    /// `<column>_minute`, `<column>_second`, `<column>_weekday`.
+    /// Transform validates that each target column exists and is a datetime type,
+    /// then returns a new DataFrame with the additional extracted features.
     pub fn transform(&self, df: DataFrame) -> FeatureFactoryResult<DataFrame> {
+        // Validate each target column in transform.
+        for col_name in &self.columns {
+            validate_datetime_column(&df, col_name)?;
+        }
         // Retain all original columns.
         let mut exprs: Vec<Expr> = df.schema().fields().iter().map(|f| col(f.name())).collect();
-
-        // Validate that each target column exists and is datetime.
+        // Add new features.
         for col_name in &self.columns {
-            // If validation fails, an error will be returned.
-            validate_datetime_column(&df, col_name)?;
             let base = col(col_name);
             let year_expr = date_part()
                 .call(vec![lit("year"), base.clone()])
@@ -86,7 +83,6 @@ impl DatetimeFeatures {
             let weekday_expr = date_part()
                 .call(vec![lit("dow"), base.clone()])
                 .alias(format!("{}_weekday", col_name));
-
             exprs.push(year_expr);
             exprs.push(month_expr);
             exprs.push(day_expr);
@@ -95,9 +91,13 @@ impl DatetimeFeatures {
             exprs.push(second_expr);
             exprs.push(weekday_expr);
         }
-
         df.select(exprs)
             .map_err(FeatureFactoryError::DataFusionError)
+    }
+
+    // This transformer is stateless.
+    fn inherent_is_stateful(&self) -> bool {
+        false
     }
 }
 
@@ -137,10 +137,8 @@ fn timestamp_diff_expr(left: Expr, right: Expr, unit: &str) -> Expr {
 }
 
 /// Computes time differences between two datetime columns.
-/// new_features is a list of tuples with the following format:
-/// (new_feature_name, left_column, right_column, time_unit)
-///
-/// The transformer validates that both the left and right columns exist and are of a datetime type.
+/// `new_features` is a list of tuples: (new_feature_name, left_column, right_column, time_unit).
+/// Transform validates that each left and right column exists and is of a datetime type.
 pub struct DatetimeSubtraction {
     pub new_features: Vec<(String, String, String, TimeUnit)>,
 }
@@ -150,37 +148,36 @@ impl DatetimeSubtraction {
         Self { new_features }
     }
 
-    /// Validates that for each new feature, the left and right columns exist and are datetime types.
-    pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
-        for (_, left, right, _) in &self.new_features {
-            validate_datetime_column(df, left)?;
-            validate_datetime_column(df, right)?;
-        }
+    /// Stateless transformer: fit does nothing.
+    pub async fn fit(&mut self, _df: &DataFrame) -> FeatureFactoryResult<()> {
         Ok(())
     }
 
-    /// Transforms the DataFrame by computing time differences between datetime columns.
-    /// For each new feature, the computed expression is:
-    /// `timestamp_diff_expr(col(left), col(right), unit)` aliased as the new feature name.
+    /// Transform validates that each left and right column exists and is a datetime type,
+    /// then adds a new column for each specified time difference.
     pub fn transform(&self, df: DataFrame) -> FeatureFactoryResult<DataFrame> {
-        // Retain original columns.
+        // Validate that each left and right column is a datetime type.
+        for (_, left, right, _) in &self.new_features {
+            // These calls now ensure that the column exists *and* is of a valid datetime type.
+            validate_datetime_column(&df, left)?;
+            validate_datetime_column(&df, right)?;
+        }
         let mut exprs: Vec<Expr> = df.schema().fields().iter().map(|f| col(f.name())).collect();
-
         for (new_name, left, right, unit) in &self.new_features {
-            // Validate that left and right columns exist.
-            df.schema().field_with_name(None, left).map_err(|_| {
-                FeatureFactoryError::MissingColumn(format!("Column '{}' not found", left))
-            })?;
-            df.schema().field_with_name(None, right).map_err(|_| {
-                FeatureFactoryError::MissingColumn(format!("Column '{}' not found", right))
-            })?;
-
             let diff_expr =
                 timestamp_diff_expr(col(left), col(right), unit.as_str()).alias(new_name);
             exprs.push(diff_expr);
         }
-
         df.select(exprs)
             .map_err(FeatureFactoryError::DataFusionError)
     }
+
+    // This transformer is stateless.
+    fn inherent_is_stateful(&self) -> bool {
+        false
+    }
 }
+
+// Implement the Transformer trait for the transformers in this module.
+impl_transformer!(DatetimeFeatures);
+impl_transformer!(DatetimeSubtraction);
