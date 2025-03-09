@@ -65,7 +65,7 @@ digraph PipelineArchitecture {
     label = "Output";
     style = "dashed";
     color = "gray";
-    df_out [label = "Transformed DataFrame", fillcolor = "lightyellow", shape = box, style = "filled,rounded"];
+    df_out [label = "Ouput DataFrame", fillcolor = "lightyellow", shape = box, style = "filled,rounded"];
     }
 
     tn_transform -> df_out [label = "produces"];
