@@ -45,7 +45,7 @@ digraph PipelineArchitecture {
     }
 
     // Ellipsis for intermediate transformers
-        dots [label = "...", shape = "plaintext", fillcolor = "white"];
+        dots [label = "...", shape = "plaintext", fillcolor = "lightgray"];
 
     // Transformer N
     subgraph cluster_tn {

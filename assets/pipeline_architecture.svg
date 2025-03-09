@@ -73,7 +73,7 @@
 <!-- dots -->
 <g id="node4" class="node">
 <title>dots</title>
-<path fill="white" stroke="transparent" stroke-width="2" d="M616,-60C616,-60 586,-60 586,-60 580,-60 574,-54 574,-48 574,-48 574,-36 574,-36 574,-30 580,-24 586,-24 586,-24 616,-24 616,-24 622,-24 628,-30 628,-36 628,-36 628,-48 628,-48 628,-54 622,-60 616,-60"/>
+<path fill="lightgray" stroke="transparent" stroke-width="2" d="M616,-60C616,-60 586,-60 586,-60 580,-60 574,-54 574,-48 574,-48 574,-36 574,-36 574,-30 580,-24 586,-24 586,-24 616,-24 616,-24 622,-24 628,-30 628,-36 628,-36 628,-48 628,-48 628,-54 622,-60 616,-60"/>
 <text text-anchor="middle" x="601" y="-38.3" font-family="Helvetica,Arial,sans-serif" font-size="14.00">...</text>
 </g>
 <!-- t2_transform&#45;&gt;dots -->
