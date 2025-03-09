@@ -2,9 +2,10 @@ use approx::assert_abs_diff_eq;
 use arrow::array::{ArrayRef, Float64Array};
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::record_batch::RecordBatch;
+use datafusion::dataframe::DataFrame;
 use datafusion::datasource::MemTable;
-use datafusion::prelude::*;
-use feature_factory::transformers::numerical_transformations::{
+use datafusion::prelude::SessionContext;
+use feature_factory::transformers::numerical::{
     ArcsinTransformer, BoxCoxTransformer, LogCpTransformer, LogTransformer, PowerTransformer,
     ReciprocalTransformer, YeoJohnsonTransformer,
 };
@@ -43,7 +44,7 @@ async fn test_log_transformer() {
         .downcast_ref::<Float64Array>()
         .unwrap();
 
-    let expected = vec![1.0_f64.ln(), 2.0_f64.ln(), 10.0_f64.ln()];
+    let expected = [1.0_f64.ln(), 2.0_f64.ln(), 10.0_f64.ln()];
     for i in 0..a_array.len() {
         assert_abs_diff_eq!(a_array.value(i), expected[i], epsilon = 1e-6);
     }
@@ -63,7 +64,7 @@ async fn test_log_cp_transformer() {
         .downcast_ref::<Float64Array>()
         .unwrap();
 
-    let expected = vec![
+    let expected = [
         (0.5_f64 + 1.0_f64).ln(),
         (1.5_f64 + 1.0_f64).ln(),
         (2.5_f64 + 1.0_f64).ln(),
@@ -87,7 +88,7 @@ async fn test_reciprocal_transformer() {
         .downcast_ref::<Float64Array>()
         .unwrap();
 
-    let expected = vec![1.0_f64 / 2.0_f64, 1.0_f64 / 3.0_f64, 1.0_f64 / 4.0_f64];
+    let expected = [1.0_f64 / 2.0_f64, 1.0_f64 / 3.0_f64, 1.0_f64 / 4.0_f64];
     for i in 0..c_array.len() {
         assert_abs_diff_eq!(c_array.value(i), expected[i], epsilon = 1e-6);
     }
@@ -107,7 +108,7 @@ async fn test_power_transformer() {
         .downcast_ref::<Float64Array>()
         .unwrap();
 
-    let expected = vec![1.0_f64.powf(2.0), 2.0_f64.powf(2.0), 10.0_f64.powf(2.0)];
+    let expected = [1.0_f64.powf(2.0), 2.0_f64.powf(2.0), 10.0_f64.powf(2.0)];
     for i in 0..a_array.len() {
         assert_abs_diff_eq!(a_array.value(i), expected[i], epsilon = 1e-6);
     }
@@ -127,7 +128,7 @@ async fn test_boxcox_transformer_lambda_nonzero() {
         .downcast_ref::<Float64Array>()
         .unwrap();
 
-    let expected = vec![
+    let expected = [
         (1.0_f64.powf(2.0) - 1.0) / 2.0,
         (2.0_f64.powf(2.0) - 1.0) / 2.0,
         (10.0_f64.powf(2.0) - 1.0) / 2.0,
@@ -151,7 +152,7 @@ async fn test_boxcox_transformer_lambda_zero() {
         .downcast_ref::<Float64Array>()
         .unwrap();
 
-    let expected = vec![1.0_f64.ln(), 2.0_f64.ln(), 10.0_f64.ln()];
+    let expected = [1.0_f64.ln(), 2.0_f64.ln(), 10.0_f64.ln()];
     for i in 0..a_array.len() {
         assert_abs_diff_eq!(a_array.value(i), expected[i], epsilon = 1e-6);
     }
@@ -170,7 +171,6 @@ async fn test_yeo_johnson_transformer() {
     ctx.register_table("u", Arc::new(mem_table)).unwrap();
     let df = ctx.table("u").await.unwrap();
 
-    // For lambda=1, the Yeo–Johnson transformation should be near the identity.
     let mut transformer = YeoJohnsonTransformer::new(vec!["d".to_string()], 1.0_f64);
     transformer.fit(&df).await.unwrap();
     let transformed_df = transformer.transform(df).unwrap();
@@ -182,7 +182,7 @@ async fn test_yeo_johnson_transformer() {
         .downcast_ref::<Float64Array>()
         .unwrap();
 
-    let expected = vec![-1.0_f64, 0.0_f64, 1.0_f64, 2.0_f64];
+    let expected = [-1.0_f64, 0.0_f64, 1.0_f64, 2.0_f64];
     for i in 0..d_array.len() {
         assert_abs_diff_eq!(d_array.value(i), expected[i], epsilon = 1e-6);
     }
@@ -238,8 +238,9 @@ async fn test_log_transformer_invalid() {
     ctx.register_table("t", Arc::new(mem_table)).unwrap();
     let df = ctx.table("t").await.unwrap();
 
-    let mut transformer = LogTransformer::new(vec!["a".to_string()]);
-    let result = transformer.fit(&df).await;
+    let transformer = LogTransformer::new(vec!["a".to_string()]);
+    // fit is empty so call transform to trigger validation
+    let result = transformer.transform(df);
     assert!(
         result.is_err(),
         "Expected error for LogTransformer with negative values"
@@ -257,8 +258,9 @@ async fn test_log_cp_transformer_invalid() {
     ctx.register_table("t", Arc::new(mem_table)).unwrap();
     let df = ctx.table("t").await.unwrap();
 
-    let mut transformer = LogCpTransformer::new(vec!["b".to_string()], 1.0_f64);
-    let result = transformer.fit(&df).await;
+    let transformer = LogCpTransformer::new(vec!["b".to_string()], 1.0_f64);
+    // Call transform to trigger validation.
+    let result = transformer.transform(df);
     assert!(
         result.is_err(),
         "Expected error for LogCpTransformer when (min + constant) <= 0"
@@ -276,8 +278,9 @@ async fn test_reciprocal_transformer_invalid() {
     ctx.register_table("t", Arc::new(mem_table)).unwrap();
     let df = ctx.table("t").await.unwrap();
 
-    let mut transformer = ReciprocalTransformer::new(vec!["c".to_string()]);
-    let result = transformer.fit(&df).await;
+    let transformer = ReciprocalTransformer::new(vec!["c".to_string()]);
+    // Call transform to trigger validation.
+    let result = transformer.transform(df);
     assert!(
         result.is_err(),
         "Expected error for ReciprocalTransformer with zero value"
@@ -295,8 +298,9 @@ async fn test_boxcox_transformer_invalid() {
     ctx.register_table("t", Arc::new(mem_table)).unwrap();
     let df = ctx.table("t").await.unwrap();
 
-    let mut transformer = BoxCoxTransformer::new(vec!["a".to_string()], 2.0_f64);
-    let result = transformer.fit(&df).await;
+    let transformer = BoxCoxTransformer::new(vec!["a".to_string()], 2.0_f64);
+    // Call transform to trigger validation.
+    let result = transformer.transform(df);
     assert!(
         result.is_err(),
         "Expected error for BoxCoxTransformer with non-positive values"
@@ -314,8 +318,9 @@ async fn test_arcsin_transformer_invalid() {
     ctx.register_table("p", Arc::new(mem_table)).unwrap();
     let df = ctx.table("p").await.unwrap();
 
-    let mut transformer = ArcsinTransformer::new(vec!["x".to_string()]);
-    let result = transformer.fit(&df).await;
+    let transformer = ArcsinTransformer::new(vec!["x".to_string()]);
+    // Call transform to trigger validation.
+    let result = transformer.transform(df);
     assert!(
         result.is_err(),
         "Expected error for ArcsinTransformer with values outside [0,1]"

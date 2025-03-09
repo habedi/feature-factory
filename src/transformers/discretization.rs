@@ -1,21 +1,22 @@
-//! ## Transformers for discretizing continuous variables
+//! ## Continuous Variable Discretization Transformers
 //!
-//! This module provides several transformers (or discretizers) to discretize continuous variables into categorical ones.
+//! This module provides transformers to convert continuous variables into categorical ones by binning them into discrete intervals.
 //!
-//! Currently, the following transformers are implemented:
+//! ### Available Transformers
 //!
-//! - **ArbitraryDiscretizer:** Discretizes based on user‑defined intervals.
-//! - **EqualFrequencyDiscretizer:** Discretizes a column into bins containing roughly equal numbers of records.
-//! - **EqualWidthDiscretizer:** Discretizes a column into bins of equal width.
-//! - **GeometricWidthDiscretizer:** Discretizes a column into bins where boundaries follow a geometric progression.
+//! - [`ArbitraryDiscretizer`]: Discretizes based on user-defined intervals.
+//! - [`EqualFrequencyDiscretizer`]: Splits a column into bins containing approximately equal numbers of values.
+//! - [`EqualWidthDiscretizer`]: Divides a column into bins of equal width.
+//! - [`GeometricWidthDiscretizer`]: Uses a geometric progression to determine bin boundaries.
 //!
-//! Each transformer returns a new DataFrame with the encodings applied to the specified columns.
-//! Errors are returned as `FeatureFactoryError` and results are wrapped in `FeatureFactoryResult`.
+//! Each transformer returns a new DataFrame with the transformed columns.
+//! Errors are returned as [`FeatureFactoryError`], and results are wrapped in [`FeatureFactoryResult`].
 
 use crate::exceptions::{FeatureFactoryError, FeatureFactoryResult};
+use crate::impl_transformer;
+use datafusion::dataframe::DataFrame;
 use datafusion::functions_aggregate::expr_fn::approx_percentile_cont;
 use datafusion::logical_expr::{col, lit, Case as DFCase, Expr};
-use datafusion::prelude::*;
 use datafusion::scalar::ScalarValue;
 use std::collections::HashMap;
 
@@ -25,7 +26,8 @@ fn validate_numeric_column(df: &DataFrame, col_name: &str) -> FeatureFactoryResu
         FeatureFactoryError::MissingColumn(format!("Column '{}' not found", col_name))
     })?;
     match field.data_type() {
-        arrow::datatypes::DataType::Float64 | arrow::datatypes::DataType::Int64 => Ok(()),
+        datafusion::arrow::datatypes::DataType::Float64
+        | datafusion::arrow::datatypes::DataType::Int64 => Ok(()),
         dt => Err(FeatureFactoryError::InvalidParameter(format!(
             "Column '{}' must be numeric (Float64 or Int64), but found {:?}",
             col_name, dt
@@ -96,9 +98,7 @@ fn apply_interval_mapping(
 /// Helper function to compute the min and max of a column using approximate percentiles.
 /// It uses p=0 for min and p=1 for max.
 async fn compute_min_max(df: &DataFrame, col_name: &str) -> FeatureFactoryResult<(f64, f64)> {
-    // Validate column is numeric.
     validate_numeric_column(df, col_name)?;
-    // Compute min.
     let min_df = df
         .clone()
         .aggregate(
@@ -126,7 +126,6 @@ async fn compute_min_max(df: &DataFrame, col_name: &str) -> FeatureFactoryResult
         ));
     };
 
-    // Compute max.
     let max_df = df
         .clone()
         .aggregate(
@@ -157,27 +156,28 @@ async fn compute_min_max(df: &DataFrame, col_name: &str) -> FeatureFactoryResult
     Ok((min_val, max_val))
 }
 
-/// Discretizes columns based on user‑defined intervals.
-/// The user supplies a mapping from column name to a vector of intervals.
-/// Each interval is defined as (lower bound, upper bound, label).
+/// Discretizes a column into arbitrary intervals defined by the user.
 pub struct ArbitraryDiscretizer {
     pub columns: Vec<String>,
     pub intervals: HashMap<String, Vec<(f64, f64, String)>>,
 }
 
 impl ArbitraryDiscretizer {
-    /// Create a new ArbitraryDiscretizer.
     pub fn new(columns: Vec<String>, intervals: HashMap<String, Vec<(f64, f64, String)>>) -> Self {
         Self { columns, intervals }
     }
 
-    /// This transformer is stateless, so fit does nothing, but we validate the provided intervals.
-    pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
-        // Ensure each target column is numeric.
+    /// Stateless transformer: fit does nothing.
+    pub async fn fit(&mut self, _df: &DataFrame) -> FeatureFactoryResult<()> {
+        Ok(())
+    }
+
+    /// Transform validates that each target column is numeric and that the intervals are valid,
+    /// then applies the interval mapping.
+    pub fn transform(&self, df: DataFrame) -> FeatureFactoryResult<DataFrame> {
         for col_name in &self.columns {
-            validate_numeric_column(df, col_name)?;
+            validate_numeric_column(&df, col_name)?;
         }
-        // Validate intervals: for each interval, lower must be less than upper.
         for (col, intervals) in &self.intervals {
             for (lower, upper, _) in intervals {
                 if lower >= upper {
@@ -188,34 +188,34 @@ impl ArbitraryDiscretizer {
                 }
             }
         }
-        Ok(())
+        apply_interval_mapping(df, &self.columns, &self.intervals)
     }
 
-    /// Transform the DataFrame by applying user‑defined intervals.
-    pub fn transform(&self, df: DataFrame) -> FeatureFactoryResult<DataFrame> {
-        apply_interval_mapping(df, &self.columns, &self.intervals)
+    // This transformer is stateless.
+    fn inherent_is_stateful(&self) -> bool {
+        false
     }
 }
 
-/// Divides a column into bins containing roughly equal numbers of records.
+/// Splits a column into bins containing approximately equal numbers of values from the column.
 pub struct EqualFrequencyDiscretizer {
     pub columns: Vec<String>,
     pub bins: usize,
-    /// Mapping from column name to vector of intervals: (lower, upper, label)
     pub mapping: HashMap<String, Vec<(f64, f64, String)>>,
+    fitted: bool,
 }
 
 impl EqualFrequencyDiscretizer {
-    /// Create a new EqualFrequencyDiscretizer with the specified number of bins.
     pub fn new(columns: Vec<String>, bins: usize) -> Self {
         Self {
             columns,
             bins,
             mapping: HashMap::new(),
+            fitted: false,
         }
     }
 
-    /// Fit the discretizer by computing quantile boundaries for each column.
+    /// Fit computes equal-frequency intervals and stores the mapping.
     pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
         if self.bins < 1 {
             return Err(FeatureFactoryError::InvalidParameter(
@@ -223,7 +223,6 @@ impl EqualFrequencyDiscretizer {
             ));
         }
         for col_name in &self.columns {
-            // Validate numeric column.
             validate_numeric_column(df, col_name)?;
             let mut boundaries = Vec::with_capacity(self.bins + 1);
             for i in 0..=self.bins {
@@ -245,8 +244,8 @@ impl EqualFrequencyDiscretizer {
                     } else {
                         return Err(FeatureFactoryError::DataFusionError(
                             datafusion::error::DataFusionError::Plan(format!(
-                                "Failed to compute quantile {} for column {}",
-                                p, col_name
+                                "Failed to compute percentile for column {}",
+                                col_name
                             )),
                         ));
                     }
@@ -271,33 +270,43 @@ impl EqualFrequencyDiscretizer {
                 .collect::<Vec<_>>();
             self.mapping.insert(col_name.clone(), intervals);
         }
+        self.fitted = true;
         Ok(())
     }
 
-    /// Transform the DataFrame by applying the equal-frequency binning.
+    /// Transform applies the equal-frequency discretization.
     pub fn transform(&self, df: DataFrame) -> FeatureFactoryResult<DataFrame> {
+        if !self.fitted {
+            return Err(FeatureFactoryError::FitNotCalled);
+        }
         apply_interval_mapping(df, &self.columns, &self.mapping)
+    }
+
+    // This transformer is stateful.
+    fn inherent_is_stateful(&self) -> bool {
+        true
     }
 }
 
-/// Divides a column into bins of equal width.
+/// Splits a column into bins of equal width.
 pub struct EqualWidthDiscretizer {
     pub columns: Vec<String>,
     pub bins: usize,
     pub mapping: HashMap<String, Vec<(f64, f64, String)>>,
+    fitted: bool,
 }
 
 impl EqualWidthDiscretizer {
-    /// Create a new EqualWidthDiscretizer with the specified number of bins.
     pub fn new(columns: Vec<String>, bins: usize) -> Self {
         Self {
             columns,
             bins,
             mapping: HashMap::new(),
+            fitted: false,
         }
     }
 
-    /// Fit the discretizer by computing min and max and then equal-width intervals.
+    /// Fit computes the min and max and then builds equal-width intervals.
     pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
         if self.bins < 1 {
             return Err(FeatureFactoryError::InvalidParameter(
@@ -305,7 +314,6 @@ impl EqualWidthDiscretizer {
             ));
         }
         for col_name in &self.columns {
-            // Validate numeric column.
             validate_numeric_column(df, col_name)?;
             let (min_val, max_val) = compute_min_max(df, col_name).await?;
             if (max_val - min_val).abs() < 1e-6 {
@@ -329,34 +337,43 @@ impl EqualWidthDiscretizer {
                 .collect::<Vec<_>>();
             self.mapping.insert(col_name.clone(), intervals);
         }
+        self.fitted = true;
         Ok(())
     }
 
-    /// Transform the DataFrame by applying equal-width binning.
+    /// Transform applies the equal-width discretization.
     pub fn transform(&self, df: DataFrame) -> FeatureFactoryResult<DataFrame> {
+        if !self.fitted {
+            return Err(FeatureFactoryError::FitNotCalled);
+        }
         apply_interval_mapping(df, &self.columns, &self.mapping)
+    }
+
+    // This transformer is stateful.
+    fn inherent_is_stateful(&self) -> bool {
+        true
     }
 }
 
-/// Divides a column into bins where boundaries follow a geometric progression.
-/// The column values must be positive and non-zero.
+/// Uses a geometric progression to determine bin boundaries.
 pub struct GeometricWidthDiscretizer {
     pub columns: Vec<String>,
     pub bins: usize,
     pub mapping: HashMap<String, Vec<(f64, f64, String)>>,
+    fitted: bool,
 }
 
 impl GeometricWidthDiscretizer {
-    /// Create a new GeometricWidthDiscretizer with the specified number of bins.
     pub fn new(columns: Vec<String>, bins: usize) -> Self {
         Self {
             columns,
             bins,
             mapping: HashMap::new(),
+            fitted: false,
         }
     }
 
-    /// Fit the discretizer by computing min and max and then generating geometric intervals.
+    /// Fit computes min and max and then generates geometric intervals.
     /// Returns an error if any column has non-positive values.
     pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
         if self.bins < 1 {
@@ -365,7 +382,6 @@ impl GeometricWidthDiscretizer {
             ));
         }
         for col_name in &self.columns {
-            // Validate numeric column.
             validate_numeric_column(df, col_name)?;
             let (min_val, max_val) = compute_min_max(df, col_name).await?;
             if min_val <= 0.0 {
@@ -391,11 +407,26 @@ impl GeometricWidthDiscretizer {
                 .collect::<Vec<_>>();
             self.mapping.insert(col_name.clone(), intervals);
         }
+        self.fitted = true;
         Ok(())
     }
 
-    /// Transform the DataFrame by applying geometric-width binning.
+    /// Transform applies the geometric-width discretization.
     pub fn transform(&self, df: DataFrame) -> FeatureFactoryResult<DataFrame> {
+        if !self.fitted {
+            return Err(FeatureFactoryError::FitNotCalled);
+        }
         apply_interval_mapping(df, &self.columns, &self.mapping)
     }
+
+    // This transformer is stateful.
+    fn inherent_is_stateful(&self) -> bool {
+        true
+    }
 }
+
+// Implement the Transformer trait for the transformers in this module.
+impl_transformer!(ArbitraryDiscretizer);
+impl_transformer!(EqualFrequencyDiscretizer);
+impl_transformer!(EqualWidthDiscretizer);
+impl_transformer!(GeometricWidthDiscretizer);

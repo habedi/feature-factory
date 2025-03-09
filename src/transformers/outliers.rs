@@ -1,22 +1,24 @@
-//! ## Transformers for handling outliers
+//! ## Outlier Handling Transformers
 //!
-//! This module provides several transformers for dealing with outliers.
+//! This module provides transformers for detecting and handling outliers in numerical data.
 //!
-//! Currently, the following transformers are implemented:
+//! ### Available Transformers
 //!
-//! - **ArbitraryOutlierCapper:** Cap outliers at user‑defined lower and upper bounds.
-//! - **Winsorizer:** Cap outliers based on percentile thresholds.
-//! - **OutlierTrimmer:** Remove rows with outlier values based on percentile thresholds.
+//! - [`ArbitraryOutlierCapper`]: Caps outliers at user-defined lower and upper bounds.
+//! - [`Winsorizer`]: Caps outliers based on percentile thresholds.
+//! - [`OutlierTrimmer`]: Removes rows with outliers based on percentile thresholds.
 //!
-//! Capping outliers is a common technique to prevent extreme values from skewing the distribution of a dataset.
-//! It is done by setting a maximum and minimum value for values that exceed a certain threshold or fall below a certain threshold (e.g., 1st and 99th percentiles).
-//! Each transformer returns a new DataFrame with the applied encodings to the specified columns.
-//! Errors are returned as `FeatureFactoryError` and results are wrapped in `FeatureFactoryResult`.
+//! Capping outliers is a common technique to reduce the impact of extreme values on statistical analysis and model performance.
+//! It involves setting upper and lower bounds, typically using percentile thresholds (e.g., 1st and 99th percentiles).
+//!
+//! Each transformer returns a new DataFrame with the applied transformations.
+//! Errors are returned as [`FeatureFactoryError`], and results are wrapped in [`FeatureFactoryResult`].
 
 use crate::exceptions::{FeatureFactoryError, FeatureFactoryResult};
+use crate::impl_transformer;
+use datafusion::dataframe::DataFrame;
 use datafusion::functions_aggregate::expr_fn::approx_percentile_cont;
 use datafusion::logical_expr::{col, lit, Case as DFCase, Expr};
-use datafusion::prelude::*;
 use datafusion::scalar::ScalarValue;
 use std::collections::HashMap;
 
@@ -60,7 +62,6 @@ async fn compute_percentiles_for_column(
     lower_percentile: f64,
     upper_percentile: f64,
 ) -> FeatureFactoryResult<(f64, f64)> {
-    // Validate percentile inputs.
     if !(0.0..=1.0).contains(&lower_percentile) {
         return Err(FeatureFactoryError::InvalidParameter(format!(
             "lower_percentile {} must be between 0 and 1",
@@ -159,7 +160,7 @@ async fn compute_percentiles_for_column(
     Ok((lower, upper))
 }
 
-/// Caps outliers by applying user‑defined lower and upper bounds.
+/// Caps outliers at user-defined lower and upper bounds so that values are within the specified range.
 pub struct ArbitraryOutlierCapper {
     pub columns: Vec<String>,
     pub lower_caps: HashMap<String, f64>,
@@ -180,7 +181,7 @@ impl ArbitraryOutlierCapper {
         }
     }
 
-    /// This transformer is stateless, so fit does nothing.
+    /// Stateless transformer: fit does nothing.
     pub async fn fit(&mut self, _df: &DataFrame) -> FeatureFactoryResult<()> {
         Ok(())
     }
@@ -205,15 +206,19 @@ impl ArbitraryOutlierCapper {
         df.select(exprs)
             .map_err(FeatureFactoryError::DataFusionError)
     }
+
+    fn inherent_is_stateful(&self) -> bool {
+        false
+    }
 }
 
 /// Caps outliers based on percentile thresholds.
-/// The percentile values must be between 0 and 1 and lower_percentile must be less than upper_percentile.
 pub struct Winsorizer {
     pub columns: Vec<String>,
     pub lower_percentile: f64,
     pub upper_percentile: f64,
     pub thresholds: HashMap<String, (f64, f64)>,
+    fitted: bool,
 }
 
 impl Winsorizer {
@@ -224,12 +229,12 @@ impl Winsorizer {
             lower_percentile,
             upper_percentile,
             thresholds: HashMap::new(),
+            fitted: false,
         }
     }
 
     /// Fit the winsorizer by computing percentile thresholds for each target column.
     pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
-        // Validate percentile inputs.
         if self.lower_percentile < 0.0 || self.lower_percentile > 1.0 {
             return Err(FeatureFactoryError::InvalidParameter(format!(
                 "lower_percentile {} must be between 0 and 1",
@@ -259,11 +264,15 @@ impl Winsorizer {
             .await?;
             self.thresholds.insert(col_name.clone(), (lower, upper));
         }
+        self.fitted = true;
         Ok(())
     }
 
     /// Returns a new DataFrame where each target column is capped using the computed thresholds.
     pub fn transform(&self, df: DataFrame) -> FeatureFactoryResult<DataFrame> {
+        if !self.fitted {
+            return Err(FeatureFactoryError::FitNotCalled);
+        }
         let exprs: Vec<Expr> = df
             .schema()
             .fields()
@@ -284,15 +293,19 @@ impl Winsorizer {
         df.select(exprs)
             .map_err(FeatureFactoryError::DataFusionError)
     }
+
+    fn inherent_is_stateful(&self) -> bool {
+        true
+    }
 }
 
-/// Removes rows with outlier values based on percentile thresholds.
-/// The percentile values must be between 0 and 1 and lower_percentile must be less than upper_percentile.
+/// Removes rows with outliers based on percentile thresholds.
 pub struct OutlierTrimmer {
     pub columns: Vec<String>,
     pub lower_percentile: f64,
     pub upper_percentile: f64,
     pub thresholds: HashMap<String, (f64, f64)>,
+    fitted: bool,
 }
 
 impl OutlierTrimmer {
@@ -303,12 +316,12 @@ impl OutlierTrimmer {
             lower_percentile,
             upper_percentile,
             thresholds: HashMap::new(),
+            fitted: false,
         }
     }
 
     /// Fit the trimmer by computing percentile thresholds for each target column.
     pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
-        // Validate percentile inputs.
         if self.lower_percentile < 0.0 || self.lower_percentile > 1.0 {
             return Err(FeatureFactoryError::InvalidParameter(format!(
                 "lower_percentile {} must be between 0 and 1",
@@ -338,11 +351,15 @@ impl OutlierTrimmer {
             .await?;
             self.thresholds.insert(col_name.clone(), (lower, upper));
         }
+        self.fitted = true;
         Ok(())
     }
 
     /// Returns a new DataFrame with rows dropped if any target column has a value outside the computed thresholds.
     pub fn transform(&self, df: DataFrame) -> FeatureFactoryResult<DataFrame> {
+        if !self.fitted {
+            return Err(FeatureFactoryError::FitNotCalled);
+        }
         let predicates: Vec<Expr> = df
             .schema()
             .fields()
@@ -374,4 +391,13 @@ impl OutlierTrimmer {
         df.filter(combined)
             .map_err(FeatureFactoryError::DataFusionError)
     }
+
+    fn inherent_is_stateful(&self) -> bool {
+        true
+    }
 }
+
+// Implement the Transformer trait for the transformers in this module.
+impl_transformer!(ArbitraryOutlierCapper);
+impl_transformer!(Winsorizer);
+impl_transformer!(OutlierTrimmer);

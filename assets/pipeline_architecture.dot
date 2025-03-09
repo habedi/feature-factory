@@ -1,0 +1,72 @@
+digraph PipelineArchitecture {
+    fontname = "Helvetica,Arial,sans-serif";
+    layout = dot;
+    rankdir = LR;
+
+    // Global node style (overridden where necessary)
+    node [
+    fontname = "Helvetica,Arial,sans-serif",
+    shape = box,
+    style = "filled,rounded",
+    color = "lightblue",
+    penwidth = 2
+    ];
+    edge [
+    fontname = "Helvetica,Arial,sans-serif",
+    color = "black"
+    ];
+
+    subgraph cluster_input {
+    label = "Input";
+    style = "dashed";
+    color = "gray";
+    df_in [label = "Input DataFrame", fillcolor = "lightyellow", shape = box, style = "filled,rounded"];
+    }
+
+    subgraph cluster_pipeline {
+    label = "Pipeline";
+    style = "dashed";
+    color = "gray";
+
+    // Transformer 1
+        subgraph cluster_t1 {
+    label = "Fitted Transformer 1";
+    style = "dashed";
+    color = "gray";
+    t1_transform [label = "Transform", fillcolor = "lavender"];
+    }
+
+    // Transformer 2
+    subgraph cluster_t2 {
+    label = "Fitted Transformer 2";
+    style = "dashed";
+    color = "gray";
+    t2_transform [label = "Transform", fillcolor = "lavender"];
+    }
+
+    // Ellipsis for intermediate transformers
+        dots [label = "...", shape = "plaintext", fillcolor = "white"];
+
+    // Transformer N
+    subgraph cluster_tn {
+    label = "Fitted Transformer N";
+    style = "dashed";
+    color = "gray";
+    tn_transform [label = "Transform", fillcolor = "lavender"];
+    }
+
+    df_in -> t1_transform [label = "receives"];
+    t1_transform -> t2_transform;
+    t2_transform -> dots;
+    dots -> tn_transform;
+    }
+
+    subgraph cluster_output {
+    label = "Output";
+    style = "dashed";
+    color = "gray";
+    df_out [label = "Transformed DataFrame", fillcolor = "lightyellow", shape = box, style = "filled,rounded"];
+    }
+
+    tn_transform -> df_out [label = "produces"];
+}

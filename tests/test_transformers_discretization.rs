@@ -5,10 +5,9 @@ use arrow::datatypes::{DataType, Field, Schema};
 use arrow::record_batch::RecordBatch;
 use datafusion::datasource::memory::MemTable;
 use datafusion::prelude::*;
-use tokio;
 
 use feature_factory::exceptions::FeatureFactoryResult;
-use feature_factory::transformers::variable_discretization::{
+use feature_factory::transformers::discretization::{
     ArbitraryDiscretizer, EqualFrequencyDiscretizer, EqualWidthDiscretizer,
     GeometricWidthDiscretizer,
 };
@@ -149,8 +148,9 @@ async fn test_arbitrary_discretiser_invalid_intervals() -> FeatureFactoryResult<
             (5.0, 10.0, "medium".to_string()),
         ],
     );
-    let mut discretiser = ArbitraryDiscretizer::new(vec!["value".to_string()], intervals);
-    let result = discretiser.fit(&df).await;
+    let discretiser = ArbitraryDiscretizer::new(vec!["value".to_string()], intervals);
+    // For a stateless transformer, fit is empty so we call transform to trigger validation.
+    let result = discretiser.transform(df);
     assert!(
         result.is_err(),
         "Expected error due to invalid intervals (lower >= upper)"

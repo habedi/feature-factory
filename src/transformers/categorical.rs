@@ -1,25 +1,26 @@
-//! ## Transformers for encoding categorical features
+//! ## Categorical Encoding Transformers
 //!
-//! This module provides several transformers (or encoders) for mapping categorical features into numerical values.
+//! This module provides transformers (or encoders) that convert categorical features into numeric values.
 //!
-//! Currently, the following transformers are implemented:
+//! ### Available Transformers
 //!
-//! - **OneHotEncoder:** Expands each categorical column into multiple binary columns, one per distinct category.
-//! - **CountFrequencyEncoder:** Replaces each category with its count (or frequency).
-//! - **OrdinalEncoder:** Replaces each category with an ordinal (ordered integer) value.
-//! - **MeanEncoder:** Replaces each category with the mean of a target variable.
-//! - **WoEEncoder:** Replaces each category with its weight of evidence (which is the logarithm of the ratio of the probability of a “good” outcome to a “bad” outcome.)
-//! - **RareLabelEncoder:** Groups infrequent categories into a single “rare” label.
+//! - [`OneHotEncoder`]: Expands each categorical column into multiple binary columns, one per distinct category.
+//! - [`CountFrequencyEncoder`]: Replaces each category with its count (or frequency).
+//! - [`OrdinalEncoder`]: Replaces each category with an ordinal (ordered integer) value.
+//! - [`MeanEncoder`]: Replaces each category with the mean of a target variable.
+//! - [`WoEEncoder`]: Replaces each category with its weight of evidence, calculated as the logarithm of the ratio of probabilities of “good” outcomes to “bad” outcomes.
+//! - [`RareLabelEncoder`]: Groups infrequent categories into a single “rare” label.
 //!
-//! Each transformer returns a new DataFrame with the applied encodings to the specified columns.
-//! Errors are returned as `FeatureFactoryError` and results are wrapped in `FeatureFactoryResult`.
+//! Each transformer returns a new DataFrame with the applied encodings.
+//! Errors are returned as `FeatureFactoryError`, and results are wrapped in `FeatureFactoryResult`.
 
 use crate::exceptions::{FeatureFactoryError, FeatureFactoryResult};
+use crate::impl_transformer;
 use arrow::array::Array;
 use arrow::datatypes::DataType;
+use datafusion::dataframe::DataFrame;
 use datafusion::functions_aggregate::expr_fn::{avg, count};
 use datafusion::logical_expr::{col, lit, Case as DFCase, Expr};
-use datafusion::prelude::*;
 use std::collections::HashMap;
 
 /// Validates that a column exists and is of Utf8 type.
@@ -197,6 +198,7 @@ pub struct OneHotEncoder {
     pub columns: Vec<String>,
     /// Mapping from column name to list of distinct category values.
     pub categories: HashMap<String, Vec<String>>,
+    fitted: bool,
 }
 
 impl OneHotEncoder {
@@ -205,21 +207,26 @@ impl OneHotEncoder {
         Self {
             columns,
             categories: HashMap::new(),
+            fitted: false,
         }
     }
 
-    /// Learn distinct category values for each target column.
+    /// Fit computes and stores distinct category values.
     pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
         validate_string_columns(df, &self.columns)?;
         for col_name in &self.columns {
             let values = extract_distinct_values(df, col_name).await?;
             self.categories.insert(col_name.clone(), values);
         }
+        self.fitted = true;
         Ok(())
     }
 
-    /// Transform the DataFrame by adding new binary columns for each category.
+    /// Transform applies one-hot encoding and returns a new DataFrame.
     pub fn transform(&self, df: DataFrame) -> FeatureFactoryResult<DataFrame> {
+        if !self.fitted {
+            return Err(FeatureFactoryError::FitNotCalled);
+        }
         let mut exprs = vec![];
         for field in df.schema().fields() {
             exprs.push(col(field.name()));
@@ -244,13 +251,19 @@ impl OneHotEncoder {
         }
         df.select(exprs).map_err(FeatureFactoryError::from)
     }
+
+    // This transformer is stateful.
+    fn inherent_is_stateful(&self) -> bool {
+        true
+    }
 }
 
-/// Replaces each category in a column with its frequency in the column.
+/// Replaces each category in a column with its frequency.
 pub struct CountFrequencyEncoder {
     pub columns: Vec<String>,
     /// Mapping from column to (category -> count)
     pub mapping: HashMap<String, HashMap<String, i64>>,
+    fitted: bool,
 }
 
 impl CountFrequencyEncoder {
@@ -259,21 +272,26 @@ impl CountFrequencyEncoder {
         Self {
             columns,
             mapping: HashMap::new(),
+            fitted: false,
         }
     }
 
-    /// Compute counts for each category in each target column.
+    /// Fit computes counts for each category.
     pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
         validate_string_columns(df, &self.columns)?;
         for col_name in &self.columns {
             let map = extract_count_mapping(df, col_name).await?;
             self.mapping.insert(col_name.clone(), map);
         }
+        self.fitted = true;
         Ok(())
     }
 
-    /// Transform the DataFrame by replacing each target column's value with its count.
+    /// Transform replaces each category with its count.
     pub fn transform(&self, df: DataFrame) -> FeatureFactoryResult<DataFrame> {
+        if !self.fitted {
+            return Err(FeatureFactoryError::FitNotCalled);
+        }
         apply_mapping(
             df,
             &self.columns,
@@ -287,6 +305,11 @@ impl CountFrequencyEncoder {
             |_| Some(lit(0_i64)),
         )
     }
+
+    // This transformer is stateful.
+    fn inherent_is_stateful(&self) -> bool {
+        true
+    }
 }
 
 /// Replaces each category with an ordinal (ordered integer) value.
@@ -295,6 +318,7 @@ pub struct OrdinalEncoder {
     pub columns: Vec<String>,
     /// Mapping from column to (category -> ordinal index)
     pub mapping: HashMap<String, HashMap<String, i64>>,
+    fitted: bool,
 }
 
 impl OrdinalEncoder {
@@ -303,10 +327,11 @@ impl OrdinalEncoder {
         Self {
             columns,
             mapping: HashMap::new(),
+            fitted: false,
         }
     }
 
-    /// Learn the ordinal mapping for each target column.
+    /// Fit computes the ordinal mapping.
     pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
         validate_string_columns(df, &self.columns)?;
         for col_name in &self.columns {
@@ -319,11 +344,15 @@ impl OrdinalEncoder {
                 .collect();
             self.mapping.insert(col_name.clone(), mapping);
         }
+        self.fitted = true;
         Ok(())
     }
 
-    /// Transform the DataFrame by replacing each target column's value with its ordinal index.
+    /// Transform replaces each category with its ordinal index.
     pub fn transform(&self, df: DataFrame) -> FeatureFactoryResult<DataFrame> {
+        if !self.fitted {
+            return Err(FeatureFactoryError::FitNotCalled);
+        }
         apply_mapping(
             df,
             &self.columns,
@@ -337,27 +366,34 @@ impl OrdinalEncoder {
             |_| Some(lit(0_i64)),
         )
     }
+
+    // This transformer is stateful.
+    fn inherent_is_stateful(&self) -> bool {
+        true
+    }
 }
 
-/// Replaces each category with the mean of the target column (variable).
+/// Replaces each category with the mean of a target variable.
 pub struct MeanEncoder {
     pub columns: Vec<String>,
     pub target: String,
     /// Mapping from column to (category -> mean)
     pub mapping: HashMap<String, HashMap<String, f64>>,
+    fitted: bool,
 }
 
 impl MeanEncoder {
-    /// Create a new MeanEncoder for the specified columns and target column.
+    /// Create a new MeanEncoder for the specified columns and target.
     pub fn new(columns: Vec<String>, target: String) -> Self {
         Self {
             columns,
             target,
             mapping: HashMap::new(),
+            fitted: false,
         }
     }
 
-    /// For each target column, compute the average of the target variable for each category.
+    /// Fit computes the mean for each category.
     pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
         validate_string_columns(df, &self.columns)?;
         validate_numeric_column(df, &self.target)?;
@@ -403,11 +439,15 @@ impl MeanEncoder {
             }
             self.mapping.insert(col_name.clone(), map);
         }
+        self.fitted = true;
         Ok(())
     }
 
-    /// Transform the DataFrame by replacing each target column's value with the mean.
+    /// Transform replaces each category with its mean.
     pub fn transform(&self, df: DataFrame) -> FeatureFactoryResult<DataFrame> {
+        if !self.fitted {
+            return Err(FeatureFactoryError::FitNotCalled);
+        }
         apply_mapping(
             df,
             &self.columns,
@@ -421,29 +461,35 @@ impl MeanEncoder {
             |_| Some(lit(0.0_f64)),
         )
     }
+
+    // This transformer is stateful.
+    fn inherent_is_stateful(&self) -> bool {
+        true
+    }
 }
 
 /// Replaces each category with its weight of evidence (WoE).
-/// WoE is computed as ln((good_rate)/(bad_rate)), assuming a binary target where 1 indicates good and 0 bad.
+/// WoE is computed as ln((good_rate)/(bad_rate)), assuming a binary target.
 pub struct WoEEncoder {
     pub columns: Vec<String>,
     pub target: String,
     /// Mapping from column to (category -> WoE)
     pub mapping: HashMap<String, HashMap<String, f64>>,
+    fitted: bool,
 }
 
 impl WoEEncoder {
-    /// Create a new WoEEncoder for the specified columns and binary target.
+    /// Create a new WoEEncoder for the specified columns and target.
     pub fn new(columns: Vec<String>, target: String) -> Self {
         Self {
             columns,
             target,
             mapping: HashMap::new(),
+            fitted: false,
         }
     }
 
-    /// Fit the encoder by computing counts of good and bad outcomes for each category,
-    /// then calculating WoE = ln((good_rate)/(bad_rate)).
+    /// Fit computes the WoE for each category.
     pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
         validate_string_columns(df, &self.columns)?;
         validate_numeric_column(df, &self.target)?;
@@ -534,11 +580,15 @@ impl WoEEncoder {
             }
             self.mapping.insert(col_name.clone(), mapping);
         }
+        self.fitted = true;
         Ok(())
     }
 
-    /// Transform the DataFrame by replacing each category with its computed WoE value.
+    /// Transform replaces each category with its computed WoE.
     pub fn transform(&self, df: DataFrame) -> FeatureFactoryResult<DataFrame> {
+        if !self.fitted {
+            return Err(FeatureFactoryError::FitNotCalled);
+        }
         apply_mapping(
             df,
             &self.columns,
@@ -552,6 +602,11 @@ impl WoEEncoder {
             |_| Some(lit(0.0_f64)),
         )
     }
+
+    // This transformer is stateful.
+    fn inherent_is_stateful(&self) -> bool {
+        true
+    }
 }
 
 /// Groups infrequent categories into a single “rare” label.
@@ -560,19 +615,21 @@ pub struct RareLabelEncoder {
     pub threshold: f64, // frequency threshold (between 0 and 1)
     /// Mapping from column to (category -> encoded label)
     pub mapping: HashMap<String, HashMap<String, String>>,
+    fitted: bool,
 }
 
 impl RareLabelEncoder {
-    /// Create a new RareLabelEncoder for the specified columns and frequency threshold.
+    /// Create a new RareLabelEncoder for the specified columns and threshold.
     pub fn new(columns: Vec<String>, threshold: f64) -> Self {
         Self {
             columns,
             threshold,
             mapping: HashMap::new(),
+            fitted: false,
         }
     }
 
-    /// Fit the encoder by computing frequencies and marking those below the threshold as "rare".
+    /// Fit computes frequencies and marks infrequent categories as "rare".
     pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
         if self.threshold < 0.0 || self.threshold > 1.0 {
             return Err(FeatureFactoryError::InvalidParameter(format!(
@@ -651,11 +708,15 @@ impl RareLabelEncoder {
             }
             self.mapping.insert(col_name.clone(), map);
         }
+        self.fitted = true;
         Ok(())
     }
 
-    /// Transform the DataFrame by replacing each category with its encoded label.
+    /// Transform replaces each category with its encoded label.
     pub fn transform(&self, df: DataFrame) -> FeatureFactoryResult<DataFrame> {
+        if !self.fitted {
+            return Err(FeatureFactoryError::FitNotCalled);
+        }
         apply_mapping(
             df,
             &self.columns,
@@ -669,4 +730,17 @@ impl RareLabelEncoder {
             |name| Some(col(name)),
         )
     }
+
+    // This transformer is stateful.
+    fn inherent_is_stateful(&self) -> bool {
+        true
+    }
 }
+
+// Implement the Transformer trait for the transformers in this module.
+impl_transformer!(OneHotEncoder);
+impl_transformer!(CountFrequencyEncoder);
+impl_transformer!(OrdinalEncoder);
+impl_transformer!(MeanEncoder);
+impl_transformer!(WoEEncoder);
+impl_transformer!(RareLabelEncoder);

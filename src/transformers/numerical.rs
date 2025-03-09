@@ -1,28 +1,28 @@
-//! ## Transformers for performing numerical transformations
+//! ## Numerical Transformation Transformers
 //!
-//! This module provides various transformers for transforming variables/features using mathematical functions.
+//! This module provides transformers for applying mathematical transformations to numerical features.
 //!
-//! Currently, the following transformers are implemented:
+//! ### Available Transformers
 //!
-//! - **LogTransformer:** Apply natural logarithm transformation (requires positive values).
-//! - **LogCpTransformer:** Apply logarithmic transformation with a constant (requires values + constant > 0).
-//! - **ReciprocalTransformer:** Apply reciprocal transformation (requires non-zero values).
-//! - **PowerTransformer:** Apply power transformation.
-//! - **BoxCoxTransformer:** Apply Box–Cox transformation (requires positive values).
-//! - **YeoJohnsonTransformer:** Apply Yeo–Johnson transformation.
-//! - **ArcsinTransformer:** Apply arcsine transformation (typically for proportions).
+//! - [`LogTransformer`]: Applies the natural logarithm transformation (requires positive values).
+//! - [`LogCpTransformer`]: Applies a logarithmic transformation with a constant (requires values + constant > 0).
+//! - [`ReciprocalTransformer`]: Applies the reciprocal transformation (requires non-zero values).
+//! - [`PowerTransformer`]: Applies a power transformation with a specified exponent.
+//! - [`BoxCoxTransformer`]: Applies the Box-Cox transformation (requires positive values).
+//! - [`YeoJohnsonTransformer`]: Applies the Yeo-Johnson transformation (supports all real numbers).
+//! - [`ArcsinTransformer`]: Applies the arcsine transformation (commonly used for proportions).
 //!
-//! Each transformer provides a constructor, an (async) `fit` method (if needed), and a `transform` method
-//! that returns a new DataFrame with the transformation applied.
-//! Errors are returned as `FeatureFactoryError` and results are wrapped in `FeatureFactoryResult`.
+//! Each transformer returns a new DataFrame with transformed features.
+//! Errors are returned as [`FeatureFactoryError`], and results are wrapped in [`FeatureFactoryResult`].
 
 use crate::exceptions::{FeatureFactoryError, FeatureFactoryResult};
+use crate::impl_transformer;
+use datafusion::dataframe::DataFrame;
 use datafusion::functions_aggregate::approx_percentile_cont::approx_percentile_cont;
-use datafusion::prelude::*;
 use datafusion::scalar::ScalarValue;
-use datafusion_expr::expr::Case;
 use datafusion_expr::{col, lit, Expr};
 use datafusion_functions::math;
+use std::ops::{Add, Div, Neg, Sub};
 
 /// Wrapper function wrapping math's natural logarithm UDF.
 fn ln_expr(e: Expr) -> Expr {
@@ -44,7 +44,7 @@ fn asin_expr(e: Expr) -> Expr {
     math::asin().call(vec![e])
 }
 
-/// Wrapper function to compute the minimum value in a numeric column using approximate percentiles (p=0).
+/// Helper function to compute the minimum value in a numeric column using approximate percentiles (p=0).
 async fn compute_min(df: &DataFrame, col_name: &str) -> FeatureFactoryResult<f64> {
     let min_df = df
         .clone()
@@ -104,8 +104,8 @@ async fn compute_max(df: &DataFrame, col_name: &str) -> FeatureFactoryResult<f64
     }
 }
 
-/// Applies a natural logarithm transformation to the values in the columns.
-/// Requires all values to be positive.
+/// Applies natural logarithm transformation to the values in the columns.
+/// Needs all values to be positive.
 pub struct LogTransformer {
     pub columns: Vec<String>,
 }
@@ -115,8 +115,13 @@ impl LogTransformer {
         Self { columns }
     }
 
-    /// Checks that each target column is numeric (Float64) and that all its values are positive.
-    pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
+    /// Stateless transformer: fit does nothing.
+    pub async fn fit(&mut self, _df: &DataFrame) -> FeatureFactoryResult<()> {
+        Ok(())
+    }
+
+    /// Validates that each target column exists, is Float64, and that the minimum value is > 0.
+    fn validate(&self, df: &DataFrame) -> FeatureFactoryResult<()> {
         for col_name in &self.columns {
             let field = df.schema().field_with_name(None, col_name).map_err(|_| {
                 FeatureFactoryError::MissingColumn(format!("Column '{}' not found", col_name))
@@ -127,10 +132,11 @@ impl LogTransformer {
                     col_name
                 )));
             }
-            let min_val = compute_min(df, col_name).await?;
+            // Compute min value.
+            let min_val = futures::executor::block_on(compute_min(df, col_name))?;
             if min_val <= 0.0 {
                 return Err(FeatureFactoryError::InvalidParameter(format!(
-                    "LogTransformer requires all values in column '{}' to be positive, found minimum {}",
+                    "LogTransformer requires all values in column '{}' to be positive, found min {}",
                     col_name, min_val
                 )));
             }
@@ -139,6 +145,7 @@ impl LogTransformer {
     }
 
     pub fn transform(&self, df: DataFrame) -> FeatureFactoryResult<DataFrame> {
+        self.validate(&df)?;
         let exprs: Vec<Expr> = df
             .schema()
             .fields()
@@ -154,11 +161,14 @@ impl LogTransformer {
             .collect();
         df.select(exprs).map_err(FeatureFactoryError::from)
     }
+
+    fn inherent_is_stateful(&self) -> bool {
+        false
+    }
 }
 
-/// Applies a logarithmic transformation to the values in the columns.
-/// Given a constant c, the transformation is log(x + c) where x is the original value (in the column).
-/// It Requires all values in the columns to be positive.
+/// Applies logarithmic transformation with a constant to the values in the columns.
+/// Transformation: log(x + constant). Requires (min + constant) > 0.
 pub struct LogCpTransformer {
     pub columns: Vec<String>,
     pub constant: f64,
@@ -169,8 +179,13 @@ impl LogCpTransformer {
         Self { columns, constant }
     }
 
-    /// Checks that for each target column, (min + constant) > 0.
-    pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
+    /// Stateless transformer: fit does nothing.
+    pub async fn fit(&mut self, _df: &DataFrame) -> FeatureFactoryResult<()> {
+        Ok(())
+    }
+
+    /// Validates that each target column exists, is Float64, and that (min + constant) > 0.
+    fn validate(&self, df: &DataFrame) -> FeatureFactoryResult<()> {
         for col_name in &self.columns {
             let field = df.schema().field_with_name(None, col_name).map_err(|_| {
                 FeatureFactoryError::MissingColumn(format!("Column '{}' not found", col_name))
@@ -181,7 +196,7 @@ impl LogCpTransformer {
                     col_name
                 )));
             }
-            let min_val = compute_min(df, col_name).await?;
+            let min_val = futures::executor::block_on(compute_min(df, col_name))?;
             if min_val + self.constant <= 0.0 {
                 return Err(FeatureFactoryError::InvalidParameter(format!(
                     "LogCpTransformer requires (min + constant) > 0 for column '{}', but min {} + constant {} = {}",
@@ -193,6 +208,7 @@ impl LogCpTransformer {
     }
 
     pub fn transform(&self, df: DataFrame) -> FeatureFactoryResult<DataFrame> {
+        self.validate(&df)?;
         let exprs: Vec<Expr> = df
             .schema()
             .fields()
@@ -208,10 +224,14 @@ impl LogCpTransformer {
             .collect();
         df.select(exprs).map_err(FeatureFactoryError::from)
     }
+
+    fn inherent_is_stateful(&self) -> bool {
+        false
+    }
 }
 
-/// Applies a reciprocal transformation to the values in the columns (with the formula 1/x).
-/// Requires all values to be non-zero.
+/// Applies reciprocal transformation (1/x) to the values in the columns.
+/// Requires that no value is zero.
 pub struct ReciprocalTransformer {
     pub columns: Vec<String>,
 }
@@ -221,8 +241,13 @@ impl ReciprocalTransformer {
         Self { columns }
     }
 
-    /// Checks that each target column is numeric and does not contain a zero.
-    pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
+    /// Stateless transformer: fit does nothing.
+    pub async fn fit(&mut self, _df: &DataFrame) -> FeatureFactoryResult<()> {
+        Ok(())
+    }
+
+    /// Validates that each target column exists, is Float64, and that no value is zero.
+    fn validate(&self, df: &DataFrame) -> FeatureFactoryResult<()> {
         for col_name in &self.columns {
             let field = df.schema().field_with_name(None, col_name).map_err(|_| {
                 FeatureFactoryError::MissingColumn(format!("Column '{}' not found", col_name))
@@ -233,8 +258,8 @@ impl ReciprocalTransformer {
                     col_name
                 )));
             }
-            let min_val = compute_min(df, col_name).await?;
-            let max_val = compute_max(df, col_name).await?;
+            let min_val = futures::executor::block_on(compute_min(df, col_name))?;
+            let max_val = futures::executor::block_on(compute_max(df, col_name))?;
             if min_val <= 0.0 && max_val >= 0.0 {
                 return Err(FeatureFactoryError::InvalidParameter(format!(
                     "ReciprocalTransformer requires column '{}' to have no zero values (found range [{}, {}])",
@@ -246,6 +271,7 @@ impl ReciprocalTransformer {
     }
 
     pub fn transform(&self, df: DataFrame) -> FeatureFactoryResult<DataFrame> {
+        self.validate(&df)?;
         let exprs: Vec<Expr> = df
             .schema()
             .fields()
@@ -261,10 +287,13 @@ impl ReciprocalTransformer {
             .collect();
         df.select(exprs).map_err(FeatureFactoryError::from)
     }
+
+    fn inherent_is_stateful(&self) -> bool {
+        false
+    }
 }
 
-/// Applies a power transformation to the values in the columns (with the formula x^power).
-/// Requires all values to be numeric.
+/// Applies power transformation to the values in the columns (x^power).
 pub struct PowerTransformer {
     pub columns: Vec<String>,
     pub power: f64,
@@ -275,8 +304,13 @@ impl PowerTransformer {
         Self { columns, power }
     }
 
-    /// Checks that each target column is numeric.
-    pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
+    /// Stateless transformer: fit does nothing.
+    pub async fn fit(&mut self, _df: &DataFrame) -> FeatureFactoryResult<()> {
+        Ok(())
+    }
+
+    /// Validates that each target column exists.
+    fn validate(&self, df: &DataFrame) -> FeatureFactoryResult<()> {
         for col_name in &self.columns {
             df.schema().field_with_name(None, col_name).map_err(|_| {
                 FeatureFactoryError::MissingColumn(format!("Column '{}' not found", col_name))
@@ -286,6 +320,7 @@ impl PowerTransformer {
     }
 
     pub fn transform(&self, df: DataFrame) -> FeatureFactoryResult<DataFrame> {
+        self.validate(&df)?;
         let exprs: Vec<Expr> = df
             .schema()
             .fields()
@@ -301,10 +336,15 @@ impl PowerTransformer {
             .collect();
         df.select(exprs).map_err(FeatureFactoryError::from)
     }
+
+    fn inherent_is_stateful(&self) -> bool {
+        false
+    }
 }
 
-/// Applies a Box–Cox transformation to the values in the columns (with the formula (x^lambda - 1) / lambda).
-/// Requires values to in the columns to be positive.
+/// Applies Box–Cox transformation to the values in the columns.
+/// Transformation: (x^lambda - 1) / lambda for lambda != 0, else ln(x)
+/// Needs all values to be positive.
 pub struct BoxCoxTransformer {
     pub columns: Vec<String>,
     pub lambda: f64,
@@ -315,8 +355,13 @@ impl BoxCoxTransformer {
         Self { columns, lambda }
     }
 
-    /// Checks that each target column is numeric and that all its values are positive.
-    pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
+    /// Stateless transformer: fit does nothing.
+    pub async fn fit(&mut self, _df: &DataFrame) -> FeatureFactoryResult<()> {
+        Ok(())
+    }
+
+    /// Validates that each target column exists, is Float64, and that all values are positive.
+    fn validate(&self, df: &DataFrame) -> FeatureFactoryResult<()> {
         for col_name in &self.columns {
             let field = df.schema().field_with_name(None, col_name).map_err(|_| {
                 FeatureFactoryError::MissingColumn(format!("Column '{}' not found", col_name))
@@ -327,7 +372,7 @@ impl BoxCoxTransformer {
                     col_name
                 )));
             }
-            let min_val = compute_min(df, col_name).await?;
+            let min_val = futures::executor::block_on(compute_min(df, col_name))?;
             if min_val <= 0.0 {
                 return Err(FeatureFactoryError::InvalidParameter(format!(
                     "BoxCoxTransformer requires all values in column '{}' to be positive, found min {}",
@@ -339,6 +384,7 @@ impl BoxCoxTransformer {
     }
 
     pub fn transform(&self, df: DataFrame) -> FeatureFactoryResult<DataFrame> {
+        self.validate(&df)?;
         let exprs: Vec<Expr> = df
             .schema()
             .fields()
@@ -361,11 +407,15 @@ impl BoxCoxTransformer {
             .collect();
         df.select(exprs).map_err(FeatureFactoryError::from)
     }
+
+    fn inherent_is_stateful(&self) -> bool {
+        false
+    }
 }
 
-/// Applies a Yeo–Johnson transformation to values in the columns.
-/// The transformation is defined as: (x^lambda - 1) / lambda for lambda != 0, and ln(x + 1) for lambda = 0.
-/// Requires all values in the columns to be numeric.
+/// Applies Yeo–Johnson transformation to the values in the columns.
+/// For x >= 0: ( (x + 1)^lambda - 1) / lambda for lambda != 0, else ln(x + 1)
+/// and for x < 0: -((1 - x)^(2 - lambda) - 1) / (2 - lambda) for lambda != 2, else -ln(1 - x)
 pub struct YeoJohnsonTransformer {
     pub columns: Vec<String>,
     pub lambda: f64,
@@ -376,8 +426,13 @@ impl YeoJohnsonTransformer {
         Self { columns, lambda }
     }
 
-    /// Checks that each target column is numeric.
-    pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
+    /// Stateless transformer: fit does nothing.
+    pub async fn fit(&mut self, _df: &DataFrame) -> FeatureFactoryResult<()> {
+        Ok(())
+    }
+
+    /// Validates that each target column exists.
+    fn validate(&self, df: &DataFrame) -> FeatureFactoryResult<()> {
         for col_name in &self.columns {
             df.schema().field_with_name(None, col_name).map_err(|_| {
                 FeatureFactoryError::MissingColumn(format!("Column '{}' not found", col_name))
@@ -387,6 +442,7 @@ impl YeoJohnsonTransformer {
     }
 
     pub fn transform(&self, df: DataFrame) -> FeatureFactoryResult<DataFrame> {
+        self.validate(&df)?;
         let exprs: Vec<Expr> = df
             .schema()
             .fields()
@@ -394,14 +450,14 @@ impl YeoJohnsonTransformer {
             .map(|field| {
                 let name = field.name();
                 if self.columns.contains(name) {
-                    let pos = if (self.lambda - 0.0).abs() > 1e-6 {
+                    let pos_expr = if (self.lambda - 0.0).abs() > 1e-6 {
                         power_expr(col(name).add(lit(1.0)), self.lambda)
                             .sub(lit(1.0))
                             .div(lit(self.lambda))
                     } else {
                         ln_expr(col(name).add(lit(1.0)))
                     };
-                    let neg = if (self.lambda - 2.0).abs() > 1e-6 {
+                    let neg_expr = if (self.lambda - 2.0).abs() > 1e-6 {
                         power_expr(lit(1.0).sub(col(name)), 2.0 - self.lambda)
                             .sub(lit(1.0))
                             .div(lit(2.0 - self.lambda))
@@ -409,10 +465,13 @@ impl YeoJohnsonTransformer {
                     } else {
                         ln_expr(lit(1.0).sub(col(name))).neg()
                     };
-                    let case_expr = Expr::Case(Case {
+                    let case_expr = Expr::Case(datafusion_expr::expr::Case {
                         expr: None,
-                        when_then_expr: vec![(Box::new(col(name).gt_eq(lit(0.0))), Box::new(pos))],
-                        else_expr: Some(Box::new(neg)),
+                        when_then_expr: vec![(
+                            Box::new(col(name).gt_eq(lit(0.0))),
+                            Box::new(pos_expr),
+                        )],
+                        else_expr: Some(Box::new(neg_expr)),
                     });
                     case_expr.alias(name)
                 } else {
@@ -422,10 +481,14 @@ impl YeoJohnsonTransformer {
             .collect();
         df.select(exprs).map_err(FeatureFactoryError::from)
     }
+
+    fn inherent_is_stateful(&self) -> bool {
+        false
+    }
 }
 
-/// Applies an arcsine transformation defined as asin(sqrt(x)) to the values (i.e., x) in the columns.
-/// Requires all values in the columns to be between 0 and 1.
+/// Applies an arcsine transformation defined as asin(sqrt(x)) to the values in the columns.
+/// Needs all values to be between 0 and 1.
 pub struct ArcsinTransformer {
     pub columns: Vec<String>,
 }
@@ -435,8 +498,13 @@ impl ArcsinTransformer {
         Self { columns }
     }
 
-    /// Checks that each target column is numeric and that its values are between 0 and 1.
-    pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
+    /// Stateless transformer: fit does nothing.
+    pub async fn fit(&mut self, _df: &DataFrame) -> FeatureFactoryResult<()> {
+        Ok(())
+    }
+
+    /// Validates that each target column exists, is Float64, and that all values are between 0 and 1.
+    fn validate(&self, df: &DataFrame) -> FeatureFactoryResult<()> {
         for col_name in &self.columns {
             let field = df.schema().field_with_name(None, col_name).map_err(|_| {
                 FeatureFactoryError::MissingColumn(format!("Column '{}' not found", col_name))
@@ -447,8 +515,8 @@ impl ArcsinTransformer {
                     col_name
                 )));
             }
-            let min_val = compute_min(df, col_name).await?;
-            let max_val = compute_max(df, col_name).await?;
+            let min_val = futures::executor::block_on(compute_min(df, col_name))?;
+            let max_val = futures::executor::block_on(compute_max(df, col_name))?;
             if min_val < 0.0 || max_val > 1.0 {
                 return Err(FeatureFactoryError::InvalidParameter(format!(
                     "ArcsinTransformer requires all values in column '{}' to be between 0 and 1, found range [{}, {}]",
@@ -460,6 +528,7 @@ impl ArcsinTransformer {
     }
 
     pub fn transform(&self, df: DataFrame) -> FeatureFactoryResult<DataFrame> {
+        self.validate(&df)?;
         let exprs: Vec<Expr> = df
             .schema()
             .fields()
@@ -475,4 +544,17 @@ impl ArcsinTransformer {
             .collect();
         df.select(exprs).map_err(FeatureFactoryError::from)
     }
+
+    fn inherent_is_stateful(&self) -> bool {
+        false
+    }
 }
+
+// Implement the Transformer trait for the transformers in this module.
+impl_transformer!(LogTransformer);
+impl_transformer!(LogCpTransformer);
+impl_transformer!(ReciprocalTransformer);
+impl_transformer!(PowerTransformer);
+impl_transformer!(BoxCoxTransformer);
+impl_transformer!(YeoJohnsonTransformer);
+impl_transformer!(ArcsinTransformer);

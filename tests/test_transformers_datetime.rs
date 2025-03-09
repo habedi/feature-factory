@@ -4,9 +4,7 @@ use arrow::datatypes::{DataType, Field, Schema, TimeUnit as ArrowTimeUnit};
 use arrow::record_batch::RecordBatch;
 use datafusion::datasource::MemTable;
 use datafusion::prelude::*;
-use feature_factory::transformers::datetime_features::{
-    DatetimeFeatures, DatetimeSubtraction, TimeUnit,
-};
+use feature_factory::transformers::datetime::{DatetimeFeatures, DatetimeSubtraction, TimeUnit};
 use std::sync::Arc;
 
 /// Helper function to extract an array's values as f64.
@@ -40,7 +38,6 @@ async fn create_datetime_features_df() -> DataFrame {
     let ts_array = TimestampNanosecondArray::from(ts_values);
     let batch = RecordBatch::try_new(schema.clone(), vec![Arc::new(ts_array) as ArrayRef]).unwrap();
     let mem_table = MemTable::try_new(schema, vec![vec![batch]]).unwrap();
-
     let ctx = SessionContext::new();
     ctx.register_table("dt", Arc::new(mem_table)).unwrap();
     ctx.table("dt").await.unwrap()
@@ -89,6 +86,7 @@ async fn create_datetime_subtraction_df() -> DataFrame {
 async fn test_datetime_features_extraction() {
     let df = create_datetime_features_df().await;
     let mut transformer = DatetimeFeatures::new(vec!["ts".to_string()]);
+    // For stateless transformers, fit is empty.
     transformer.fit(&df).await.unwrap();
     let transformed_df = transformer.transform(df).unwrap();
     let batches = transformed_df.collect().await.unwrap();
@@ -96,21 +94,21 @@ async fn test_datetime_features_extraction() {
 
     // Expected new columns (after original "ts"):
     // "ts_year", "ts_month", "ts_day", "ts_hour", "ts_minute", "ts_second", "ts_weekday"
-    let ts_year = extract_as_f64(&batch.column(1));
-    let ts_month = extract_as_f64(&batch.column(2));
-    let ts_day = extract_as_f64(&batch.column(3));
-    let ts_hour = extract_as_f64(&batch.column(4));
-    let ts_minute = extract_as_f64(&batch.column(5));
-    let ts_second = extract_as_f64(&batch.column(6));
-    let ts_weekday = extract_as_f64(&batch.column(7));
+    let ts_year = extract_as_f64(batch.column(1));
+    let ts_month = extract_as_f64(batch.column(2));
+    let ts_day = extract_as_f64(batch.column(3));
+    let ts_hour = extract_as_f64(batch.column(4));
+    let ts_minute = extract_as_f64(batch.column(5));
+    let ts_second = extract_as_f64(batch.column(6));
+    let ts_weekday = extract_as_f64(batch.column(7));
 
-    let expected_year = vec![2023.0, 2022.0, 2021.0];
-    let expected_month = vec![3.0, 12.0, 1.0];
-    let expected_day = vec![1.0, 31.0, 1.0];
-    let expected_hour = vec![12.0, 23.0, 0.0];
-    let expected_minute = vec![34.0, 59.0, 0.0];
-    let expected_second = vec![56.0, 59.0, 0.0];
-    let expected_weekday = vec![3.0, 6.0, 5.0];
+    let expected_year = [2023.0, 2022.0, 2021.0];
+    let expected_month = [3.0, 12.0, 1.0];
+    let expected_day = [1.0, 31.0, 1.0];
+    let expected_hour = [12.0, 23.0, 0.0];
+    let expected_minute = [34.0, 59.0, 0.0];
+    let expected_second = [56.0, 59.0, 0.0];
+    let expected_weekday = [3.0, 6.0, 5.0];
 
     for i in 0..ts_year.len() {
         assert_abs_diff_eq!(ts_year[i], expected_year[i], epsilon = 1e-6);
@@ -138,12 +136,10 @@ async fn test_datetime_subtraction() {
     let batch = &batches[0];
 
     // Expected new column "diff_min" is the difference in minutes.
-    let diff_min = extract_as_f64(&batch.column(2));
-    // Expected:
     // Row0: 2023-03-01T12:34:56Z - 2023-03-01T12:30:00Z = 296 sec → 296/60 ≈ 4.933333
     // Row1: 2023-03-01T00:00:00Z - 2023-02-28T23:00:00Z = 3600 sec → 3600/60 = 60.0
-    let expected_diff = vec![296.0 / 60.0, 3600.0 / 60.0];
-
+    let diff_min = extract_as_f64(batch.column(2));
+    let expected_diff = [296.0 / 60.0, 3600.0 / 60.0];
     for i in 0..diff_min.len() {
         assert_abs_diff_eq!(diff_min[i], expected_diff[i], epsilon = 1e-6);
     }
@@ -155,12 +151,20 @@ async fn test_datetime_subtraction() {
 async fn test_datetime_features_missing_column() {
     let df = create_datetime_features_df().await;
     // Attempt to extract features from a non-existent column.
-    let mut transformer = DatetimeFeatures::new(vec!["nonexistent".to_string()]);
-    let result = transformer.fit(&df).await;
+    let transformer = DatetimeFeatures::new(vec!["nonexistent".to_string()]);
+    let result = transformer.transform(df);
     assert!(
         result.is_err(),
-        "Expected error for missing datetime column"
+        "Expected error for missing datetime column in transform"
     );
+    if let Err(e) = result {
+        let err_str = format!("{}", e);
+        assert!(
+            err_str.contains("Column 'nonexistent'"),
+            "Expected error message about missing column, got: {}",
+            err_str
+        );
+    }
 }
 
 #[tokio::test]
@@ -171,18 +175,18 @@ async fn test_datetime_features_invalid_type() {
         DataType::Float64,
         false,
     )]));
-    let ts_array: ArrayRef = Arc::new(Float64Array::from(vec![1.0_f64, 2.0_f64, 3.0_f64]));
+    let ts_array: ArrayRef = Arc::new(Float64Array::from(vec![1.0, 2.0, 3.0]));
     let batch = RecordBatch::try_new(schema.clone(), vec![ts_array]).unwrap();
     let mem_table = MemTable::try_new(schema, vec![vec![batch]]).unwrap();
     let ctx = SessionContext::new();
     ctx.register_table("t", Arc::new(mem_table)).unwrap();
     let df = ctx.table("t").await.unwrap();
 
-    let mut transformer = DatetimeFeatures::new(vec!["ts".to_string()]);
-    let result = transformer.fit(&df).await;
+    let transformer = DatetimeFeatures::new(vec!["ts".to_string()]);
+    let result = transformer.transform(df);
     assert!(
         result.is_err(),
-        "Expected error for non-datetime column in DatetimeFeatures"
+        "Expected error for non-datetime column in DatetimeFeatures transform"
     );
 }
 
@@ -190,16 +194,16 @@ async fn test_datetime_features_invalid_type() {
 async fn test_datetime_subtraction_missing_column() {
     let df = create_datetime_subtraction_df().await;
     // Attempt to subtract using a non-existent column.
-    let mut transformer = DatetimeSubtraction::new(vec![(
+    let transformer = DatetimeSubtraction::new(vec![(
         "diff".to_string(),
         "ts1".to_string(),
         "nonexistent".to_string(),
         TimeUnit::Hour,
     )]);
-    let result = transformer.fit(&df).await;
+    let result = transformer.transform(df);
     assert!(
         result.is_err(),
-        "Expected error for missing column in DatetimeSubtraction"
+        "Expected error for missing column in DatetimeSubtraction transform"
     );
 }
 
@@ -214,8 +218,8 @@ async fn test_datetime_subtraction_invalid_type() {
             false,
         ),
     ]));
-    let ts1: ArrayRef = Arc::new(Float64Array::from(vec![1.0_f64, 2.0_f64]));
-    let ts2_values = vec![1677674096000000000, 1677674096000000000]; // valid timestamps
+    let ts1: ArrayRef = Arc::new(Float64Array::from(vec![1.0, 2.0]));
+    let ts2_values = vec![1677674096000000000, 1677674096000000000];
     let ts2: ArrayRef = Arc::new(TimestampNanosecondArray::from(ts2_values));
     let batch = RecordBatch::try_new(schema.clone(), vec![ts1, ts2]).unwrap();
     let mem_table = MemTable::try_new(schema, vec![vec![batch]]).unwrap();
@@ -223,15 +227,15 @@ async fn test_datetime_subtraction_invalid_type() {
     ctx.register_table("t", Arc::new(mem_table)).unwrap();
     let df = ctx.table("t").await.unwrap();
 
-    let mut transformer = DatetimeSubtraction::new(vec![(
+    let transformer = DatetimeSubtraction::new(vec![(
         "diff".to_string(),
         "ts1".to_string(), // invalid type
         "ts2".to_string(),
         TimeUnit::Minute,
     )]);
-    let result = transformer.fit(&df).await;
+    let result = transformer.transform(df);
     assert!(
         result.is_err(),
-        "Expected error for non-datetime column in DatetimeSubtraction"
+        "Expected error for non-datetime column in DatetimeSubtraction transform"
     );
 }

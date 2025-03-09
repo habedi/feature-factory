@@ -1,0 +1,58 @@
+digraph TransformerArchitecture {
+    fontname = "Helvetica,Arial,sans-serif";
+    layout = dot;
+    rankdir = LR;
+
+    node [
+    fontname = "Helvetica,Arial,sans-serif",
+    shape = box,
+    style = "filled,rounded",
+    color = "lightblue",
+    fillcolor = "white",
+    penwidth = 2
+    ];
+    edge [
+    fontname = "Helvetica,Arial,sans-serif",
+    color = "black"
+    ];
+
+    subgraph cluster_input {
+    label = "Input";
+    style = "dashed";
+    color = "gray";
+    df_in [label = "Input DataFrame", fillcolor = "lightyellow"];
+    }
+
+    subgraph cluster_training {
+    label = "Training";
+    style = "dashed";
+    color = "gray";
+    training_df [label = "Training DataFrame\n(stateful only)", fillcolor = "lightyellow"];
+    }
+
+    subgraph cluster_transformer {
+    label = "Transformer";
+    style = "dashed";
+    color = "gray";
+
+    constructor [label = "Constructor\n(new)", fillcolor = "lavender"];
+    decision [label = "Stateful?", shape = diamond, fillcolor = "lightgreen"];
+    fit [label = "Fit\n(learn parameters)", fillcolor = "lavender"];
+    transform [label = "Transform\n(apply transformation)", fillcolor = "lavender"];
+    }
+
+    subgraph cluster_output {
+    label = "Output";
+    style = "dashed";
+    color = "gray";
+    df_out [label = "Output DataFrame", fillcolor = "lightyellow"];
+    }
+
+    df_in -> constructor [label = "instance created"];
+    constructor -> decision [label = "initialize"];
+    training_df -> fit [label = "training data"];
+    decision -> fit [label = "Yes"];
+    decision -> transform [label = "No"];
+    fit -> transform [label = "uses learned params"];
+    transform -> df_out [label = "produces"];
+}

@@ -1,14 +1,23 @@
-//! # Transformer Implementations
+//! ## Transformer Implementations
 //!
-//! The submodules contain the transformer implementations for different feature engineering tasks.
+//! This module includes submodules for different categories of transformers.
+//!
+//! ### Available Submodules
+//!
+//! - [`categorical`]: Transformers for encoding categorical variables.
+//! - [`datetime`]: Transformers for extracting features from datetime columns.
+//! - [`discretization`]: Transformers for converting continuous variables into discrete bins.
+//! - [`feature_creation`]: Transformers for generating new features from existing data.
+//! - [`feature_selection`]: Transformers for selecting relevant features based on statistical or heuristic methods.
+//! - [`imputation`]: Transformers for handling missing values.
+//! - [`numerical`]: Transformers for applying numerical transformations such as logarithmic or power transformations.
+//! - [`outliers`]: Transformers for identifying and handling outliers.
 
-pub mod additional_transformations;
-pub mod categorical_encoding;
-pub mod datetime_features;
+pub mod categorical;
+pub mod datetime;
+pub mod discretization;
 pub mod feature_creation;
 pub mod feature_selection;
 pub mod imputation;
-pub mod numerical_transformations;
-pub mod outlier_handling;
-pub mod scaling_and_normalization;
-pub mod variable_discretization;
+pub mod numerical;
+pub mod outliers;
