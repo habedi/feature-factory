@@ -1,22 +1,17 @@
-## Datasets for Testing
+## Test Data
 
-This directory contains the datasets used for the tests in the [`tests`](../) directory.
+You can download the test data from the following link from Hugging Face:
 
-### Downloading the Datasets
+- [feature-factory-datasets](https://huggingface.co/datasets/habedi/feature-factory-datasets)
 
-Run the following command to download the datasets used for testing:
+### Using Hugging Face CLI Client
 
-```shell
-bash download_datasets.sh
-```
-
-### Checking the Datasets
-
-To check the datasets after downloading, run the following command:
+You can use [huggingface-cli](https://huggingface.co/docs/huggingface_hub/en/guides/cli) to download the data:
 
 ```shell
-duckdb -init check_datasets.sql -no-stdin
+huggingface-cli download habedi/feature-factory-datasets --repo-type dataset --local-dir feature-factory-datasets
 ```
 
-You need to have the `duckdb` binary installed on your system to run the above command.
-Check the [DuckDB installation guide](https://duckdb.org/docs/installation) for more information.
+### Have a Look at the Data
+
+You can use a tool like [DuckDB](https://duckdb.org/) to check out the datasets.

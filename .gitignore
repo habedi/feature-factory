@@ -79,5 +79,17 @@ Cargo.lock
 # Miscellaneous files and directories to ignore
 # Add any additional file patterns a directory names that should be ignored down here
 .DS_Store
+.benchmarks
+
+# Ignore files in the tests/testdata/[feature-factory-datasets] directory
+tests/testdata/*.txt
 tests/testdata/*.csv
+tests/testdata/*.json
 tests/testdata/*.parquet
+tests/testdata/*.gitattributes
+tests/testdata/feature-factory-datasets/*.gitattributes
+tests/testdata/feature-factory-datasets/*.md
+tests/testdata/feature-factory-datasets/*.txt
+tests/testdata/feature-factory-datasets/*.csv
+tests/testdata/feature-factory-datasets/*.json
+tests/testdata/feature-factory-datasets/*.parquet

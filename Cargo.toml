@@ -9,7 +9,7 @@ keywords = ["feature-engineering", "machine-learning", "data-science", "feature-
 authors = ["Hassan Abedi <hassan.abedi.t@gmail.com>"]
 homepage = "https://github.com/habedi/feature-factory"
 documentation = "https://docs.rs/feature-factory"
-categories = ["development-tools", "algorithms", "data-structures"]
+categories = ["algorithms", "data-structures"]
 edition = "2021"
 rust-version = "1.83"
 
@@ -34,7 +34,7 @@ binaries = []
 
 [dependencies]
 arrow = "54.2.1"
-ctor = "0.4.0"
+ctor = "0.4.1"
 parquet = "54.2.1"
 tokio = { version = "1.0", features = ["rt-multi-thread"] }
 tracing = "0.1.41"

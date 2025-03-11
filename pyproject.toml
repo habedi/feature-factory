@@ -3,17 +3,16 @@ name = "feature-factory"
 version = "0.1.0"
 description = "Python environment for the Feature Factory library"
 authors = ["Hassan Abedi <hassan.abedi.t@gmail.com>"]
-maintainers = ["Hassan Abedi <hassan.abedi.t@gmail.com>"]
 
 [tool.poetry.dependencies]
 python = "^3.10"
-poetry-dynamic-versioning = "^1.4.0"
 pytest = "^8.0.1"
 pytest-cov = "^6.0.0"
 pytest-mock = "^3.14.0"
 pytest-benchmark = "^5.1.0"
 mypy = "^1.11.1"
-ruff = "^0.9.9"
+ruff = "^0.11.0"
+huggingface-hub = "^0.29.3"
 
 [tool.mypy]
 python_version = "3.10"

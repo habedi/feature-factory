@@ -5,16 +5,13 @@ set -euo pipefail
 TESTDATA_DIR="$(dirname "$0")"
 echo "Using test data directory: $TESTDATA_DIR"
 
-# Create the directory if it doesn't exist
-mkdir -p "$TESTDATA_DIR"
+SUBDIR="feature-factory-datasets"
+HF_DATASET="habedi/$SUBDIR"
 
-echo "Downloading Wine Quality Dataset (red wine)..."
-wget -c -O "$TESTDATA_DIR/winequality-red.csv" "https://archive.ics.uci.edu/ml/machine-learning-databases/wine-quality/winequality-red.csv"
+# Create the path if it doesn't exist
+mkdir -p "$TESTDATA_DIR/$SUBDIR"
 
-echo "Downloading NYC Yellow Taxi Trip Data (January 2019, Parquet)..."
-wget -c -O "$TESTDATA_DIR/yellow_tripdata_2019-01.parquet" "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2019-01.parquet"
-
-echo "Downloading NYC Green Taxi Trip Data (January 2019, Parquet)..."
-wget -c -O "$TESTDATA_DIR/green_tripdata_2019-01.parquet" "https://d37ci6vzurychx.cloudfront.net/trip-data/green_tripdata_2019-01.parquet"
+# Download the datasets from the Hugging Face Hub
+huggingface-cli download $HF_DATASET --repo-type dataset --local-dir "$TESTDATA_DIR/$SUBDIR"
 
 echo "Download complete. Test data saved to $TESTDATA_DIR"

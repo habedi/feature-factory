@@ -1,6 +1,6 @@
 <div align="center">
   <picture>
-    <img alt="Weldon the Penguin" src="assets/logo.png" height="35%" width="35%">
+    <img alt="Weldon the Penguin" src="assets/logo.png" height="40%" width="40%">
   </picture>
 </div>
 
