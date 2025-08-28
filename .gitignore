@@ -93,3 +93,4 @@ tests/testdata/feature-factory-datasets/*.txt
 tests/testdata/feature-factory-datasets/*.csv
 tests/testdata/feature-factory-datasets/*.json
 tests/testdata/feature-factory-datasets/*.parquet
+*_output.txt
