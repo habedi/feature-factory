@@ -18,7 +18,7 @@ use crate::exceptions::{FeatureFactoryError, FeatureFactoryResult};
 use crate::impl_transformer;
 use datafusion::dataframe::DataFrame;
 use datafusion::functions_aggregate::expr_fn::approx_percentile_cont;
-use datafusion::logical_expr::{col, lit, Case as DFCase, Expr};
+use datafusion::logical_expr::{Case as DFCase, Expr, col, lit};
 use datafusion::scalar::ScalarValue;
 use std::collections::HashMap;
 
@@ -85,7 +85,18 @@ async fn compute_percentiles_for_column(
         .clone()
         .aggregate(
             vec![],
-            vec![approx_percentile_cont(col(col_name), lit(lower_percentile), None).alias("lower")],
+            vec![
+                approx_percentile_cont(
+                    datafusion::logical_expr::expr::Sort {
+                        expr: col(col_name),
+                        asc: true,
+                        nulls_first: false,
+                    },
+                    lit(lower_percentile),
+                    None,
+                )
+                .alias("lower"),
+            ],
         )
         .map_err(FeatureFactoryError::DataFusionError)?;
     let lower_batches = lower_df
@@ -123,7 +134,18 @@ async fn compute_percentiles_for_column(
         .clone()
         .aggregate(
             vec![],
-            vec![approx_percentile_cont(col(col_name), lit(upper_percentile), None).alias("upper")],
+            vec![
+                approx_percentile_cont(
+                    datafusion::logical_expr::expr::Sort {
+                        expr: col(col_name),
+                        asc: true,
+                        nulls_first: false,
+                    },
+                    lit(upper_percentile),
+                    None,
+                )
+                .alias("upper"),
+            ],
         )
         .map_err(FeatureFactoryError::DataFusionError)?;
     let upper_batches = upper_df

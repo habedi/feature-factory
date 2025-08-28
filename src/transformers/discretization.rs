@@ -16,7 +16,7 @@ use crate::exceptions::{FeatureFactoryError, FeatureFactoryResult};
 use crate::impl_transformer;
 use datafusion::dataframe::DataFrame;
 use datafusion::functions_aggregate::expr_fn::approx_percentile_cont;
-use datafusion::logical_expr::{col, lit, Case as DFCase, Expr};
+use datafusion::logical_expr::{Case as DFCase, Expr, col, lit};
 use datafusion::scalar::ScalarValue;
 use std::collections::HashMap;
 
@@ -103,7 +103,18 @@ async fn compute_min_max(df: &DataFrame, col_name: &str) -> FeatureFactoryResult
         .clone()
         .aggregate(
             vec![],
-            vec![approx_percentile_cont(col(col_name), lit(0.0), None).alias("min")],
+            vec![
+                approx_percentile_cont(
+                    datafusion::logical_expr::expr::Sort {
+                        expr: col(col_name),
+                        asc: true,
+                        nulls_first: false,
+                    },
+                    lit(0.0),
+                    None,
+                )
+                .alias("min"),
+            ],
         )
         .map_err(FeatureFactoryError::from)?;
     let min_batches = min_df.collect().await.map_err(FeatureFactoryError::from)?;
@@ -130,7 +141,18 @@ async fn compute_min_max(df: &DataFrame, col_name: &str) -> FeatureFactoryResult
         .clone()
         .aggregate(
             vec![],
-            vec![approx_percentile_cont(col(col_name), lit(1.0), None).alias("max")],
+            vec![
+                approx_percentile_cont(
+                    datafusion::logical_expr::expr::Sort {
+                        expr: col(col_name),
+                        asc: true,
+                        nulls_first: false,
+                    },
+                    lit(1.0),
+                    None,
+                )
+                .alias("max"),
+            ],
         )
         .map_err(FeatureFactoryError::from)?;
     let max_batches = max_df.collect().await.map_err(FeatureFactoryError::from)?;
@@ -231,7 +253,18 @@ impl EqualFrequencyDiscretizer {
                     .clone()
                     .aggregate(
                         vec![],
-                        vec![approx_percentile_cont(col(col_name), lit(p), None).alias("q")],
+                        vec![
+                            approx_percentile_cont(
+                                datafusion::logical_expr::expr::Sort {
+                                    expr: col(col_name),
+                                    asc: true,
+                                    nulls_first: false,
+                                },
+                                lit(p),
+                                None,
+                            )
+                            .alias("q"),
+                        ],
                     )
                     .map_err(FeatureFactoryError::from)?;
                 let batches = agg_df.collect().await.map_err(FeatureFactoryError::from)?;

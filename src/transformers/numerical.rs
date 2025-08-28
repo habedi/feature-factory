@@ -20,7 +20,7 @@ use crate::impl_transformer;
 use datafusion::dataframe::DataFrame;
 use datafusion::functions_aggregate::approx_percentile_cont::approx_percentile_cont;
 use datafusion::scalar::ScalarValue;
-use datafusion_expr::{col, lit, Expr};
+use datafusion_expr::{Expr, col, lit};
 use datafusion_functions::math;
 use std::ops::{Add, Div, Neg, Sub};
 
@@ -50,7 +50,18 @@ async fn compute_min(df: &DataFrame, col_name: &str) -> FeatureFactoryResult<f64
         .clone()
         .aggregate(
             vec![],
-            vec![approx_percentile_cont(col(col_name), lit(0.0), None).alias("min")],
+            vec![
+                approx_percentile_cont(
+                    datafusion::logical_expr::expr::Sort {
+                        expr: col(col_name),
+                        asc: true,
+                        nulls_first: false,
+                    },
+                    lit(0.0),
+                    None,
+                )
+                .alias("min"),
+            ],
         )
         .map_err(FeatureFactoryError::from)?;
     let batches = min_df.collect().await.map_err(FeatureFactoryError::from)?;
@@ -80,7 +91,18 @@ async fn compute_max(df: &DataFrame, col_name: &str) -> FeatureFactoryResult<f64
         .clone()
         .aggregate(
             vec![],
-            vec![approx_percentile_cont(col(col_name), lit(1.0), None).alias("max")],
+            vec![
+                approx_percentile_cont(
+                    datafusion::logical_expr::expr::Sort {
+                        expr: col(col_name),
+                        asc: true,
+                        nulls_first: false,
+                    },
+                    lit(1.0),
+                    None,
+                )
+                .alias("max"),
+            ],
         )
         .map_err(FeatureFactoryError::from)?;
     let batches = max_df.collect().await.map_err(FeatureFactoryError::from)?;
@@ -200,7 +222,10 @@ impl LogCpTransformer {
             if min_val + self.constant <= 0.0 {
                 return Err(FeatureFactoryError::InvalidParameter(format!(
                     "LogCpTransformer requires (min + constant) > 0 for column '{}', but min {} + constant {} = {}",
-                    col_name, min_val, self.constant, min_val + self.constant
+                    col_name,
+                    min_val,
+                    self.constant,
+                    min_val + self.constant
                 )));
             }
         }

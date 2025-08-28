@@ -16,11 +16,11 @@
 
 use crate::exceptions::{FeatureFactoryError, FeatureFactoryResult};
 use crate::impl_transformer;
-use arrow::array::Array;
-use arrow::datatypes::DataType;
+use datafusion::arrow::array::Array;
+use datafusion::arrow::datatypes::DataType;
 use datafusion::dataframe::DataFrame;
 use datafusion::functions_aggregate::expr_fn::{avg, count};
-use datafusion::logical_expr::{col, lit, Case as DFCase, Expr};
+use datafusion::logical_expr::{Case as DFCase, Expr, col, lit};
 use std::collections::HashMap;
 
 /// Validates that a column exists and is of Utf8 type.

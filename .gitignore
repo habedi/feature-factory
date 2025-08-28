@@ -94,3 +94,12 @@ tests/testdata/feature-factory-datasets/*.csv
 tests/testdata/feature-factory-datasets/*.json
 tests/testdata/feature-factory-datasets/*.parquet
 *_output.txt
+python/target
+python/dist
+python/build
+python/.eggs
+python/*.egg-info
+python/.mypy_cache
+python/.pytest_cache
+python/.tox
+python/.venv

@@ -18,9 +18,12 @@ use crate::exceptions::{FeatureFactoryError, FeatureFactoryResult};
 use crate::impl_transformer;
 use datafusion::dataframe::DataFrame;
 use datafusion::functions_aggregate::expr_fn::{approx_percentile_cont, avg, count};
-use datafusion::logical_expr::{col, lit, not, Case as DFCase, Expr};
+use datafusion::logical_expr::{Case as DFCase, Expr, col, lit, not};
 use datafusion::scalar::ScalarValue;
 use std::collections::HashMap;
+
+#[cfg(feature = "pyo3")]
+use pyo3::prelude::*;
 
 /// Validates that every column in `target_cols` exists in the DataFrame.
 /// Returns an error if any target column is missing.
@@ -87,6 +90,7 @@ pub struct MeanMedianImputer {
     fitted: bool,
 }
 
+#[cfg_attr(feature = "pyo3", pyclass)]
 #[derive(Debug, Clone, Copy)]
 pub enum ImputeStrategy {
     Mean,
@@ -228,8 +232,16 @@ impl EndTailImputer {
                 .aggregate(
                     vec![],
                     vec![
-                        approx_percentile_cont(col(col_name), lit(self.percentile), None)
-                            .alias("perc"),
+                        approx_percentile_cont(
+                            datafusion::logical_expr::expr::Sort {
+                                expr: col(col_name),
+                                asc: true,
+                                nulls_first: false,
+                            },
+                            lit(self.percentile),
+                            None,
+                        )
+                        .alias("perc"),
                     ],
                 )
                 .map_err(FeatureFactoryError::from)?;

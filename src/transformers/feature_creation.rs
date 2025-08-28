@@ -14,7 +14,7 @@
 use crate::exceptions::{FeatureFactoryError, FeatureFactoryResult};
 use crate::impl_transformer;
 use datafusion::dataframe::DataFrame;
-use datafusion_expr::{col, lit, Expr};
+use datafusion_expr::{Expr, col, lit};
 use std::ops::{Div, Mul, Sub};
 
 /// Creates new features using arbitrary mathematical operations or expressions.

@@ -10,8 +10,8 @@ authors = ["Hassan Abedi <hassan.abedi.t@gmail.com>"]
 homepage = "https://github.com/habedi/feature-factory"
 documentation = "https://docs.rs/feature-factory"
 categories = ["algorithms", "data-structures"]
-edition = "2021"
-rust-version = "1.83"
+edition = "2024"
+rust-version = "1.85"
 
 resolver = "2"
 
@@ -30,24 +30,27 @@ name = "feature_factory"
 path = "src/lib.rs"
 
 [features]
-default = []  # No features enabled by default
+default = []
 binaries = []
 
 [dependencies]
-arrow = "54.2.1"
-ctor = "0.4.1"
-parquet = "54.2.1"
+arrow = "55.2.0"
+ctor = "0.5.0"
+parquet = "55.2.0"
 tokio = { version = "1.0", features = ["rt-multi-thread"] }
 tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
 thiserror = "2"
-datafusion = "46.0.0"
-datafusion-expr = "46.0.0"
-datafusion-functions = "46.0.0"
+datafusion = "49.0.2"
+datafusion-expr = "49.0.2"
+datafusion-functions = "49.0.2"
 approx = "0.5.1"
 async-trait = "0.1.87"
 futures = "0.3.31"
 rayon = "1.10"
+
+# Add pyo3 as an optional dependency
+pyo3 = { version = "0.24.1", optional = true, features = ["macros"] }
 
 [dev-dependencies]
 criterion = { version = "0.7.0", features = ["html_reports"] }
