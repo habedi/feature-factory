@@ -79,6 +79,7 @@ where
 }
 
 /// Replaces missing values with the mean ~~(or median)~~ value for numeric columns.
+#[derive(Clone)]
 pub struct MeanMedianImputer {
     pub columns: Vec<String>,
     pub strategy: ImputeStrategy,
@@ -160,6 +161,7 @@ impl MeanMedianImputer {
 }
 
 /// Replaces missing values with the given number.
+#[derive(Clone)]
 pub struct ArbitraryNumberImputer {
     pub columns: Vec<String>,
     pub number: f64,
@@ -391,6 +393,7 @@ impl AddMissingIndicator {
 }
 
 /// Removes rows that contain a missing value in the given columns.
+#[derive(Clone)]
 pub struct DropMissingData {
     /// Optional list of column names to check for missing values.
     /// If None, all columns in the DataFrame are checked.

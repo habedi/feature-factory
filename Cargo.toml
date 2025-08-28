@@ -69,4 +69,3 @@ debug = true
 
 [profile.example]
 inherits = "release"
-

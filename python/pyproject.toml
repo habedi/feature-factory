@@ -1,0 +1,40 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "feature-factory"
+version = "0.1.1"
+description = "A fast and batteries-included feature engineering library for Rust and Python."
+readme = "README.md"
+authors = [{ name = "Hassan Abedi", email = "hassan.abedi.t+ff@gmail.com" }]
+license = { text = "MIT OR Apache-2.0" }
+keywords = ["feature-engineering", "machine-learning", "data-science", "data-preprocessing", "pipeline", "arrow", "datafusion"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules"
+]
+requires-python = ">=3.10"
+dependencies = [
+    "pyarrow>=14.0"
+]
+
+[project.urls]
+homepage = "https://github.com/habedi/feature-factory"
+repository = "https://github.com/habedi/feature-factory"
+documentation = "https://github.com/habedi/feature-factory"
+
+[tool.maturin]
+module-name = "feature_factory"
+bindings = "pyo3"
+features = ["pyo3/extension-module"]

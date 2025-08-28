@@ -29,17 +29,17 @@ would like to work on or if it has already been resolved.
 
 ### Development Workflow
 
-#### Code Style
+#### Formatting Code
 
 - Use the `make format` command to format the code.
+
+#### Running Linter Checks
+
+- Use the `make lint` command to run the linters checks.
 
 #### Running Tests
 
 - Use the `make test` command to run the tests.
-
-#### Running Linters
-
-- Use the `make lint` command to run the linters.
 
 #### See Available Commands
 

@@ -1,17 +1,13 @@
-name: Run Tests
+name: Run Benchmarks
 
 on:
   workflow_dispatch:
-  workflow_call:
-  pull_request:
-    branches:
-      - main
 
 permissions:
   contents: read
 
 jobs:
-  tests:
+  benchmarks:
     runs-on: ubuntu-latest
 
     strategy:
@@ -34,11 +30,6 @@ jobs:
           sudo apt-get install -y clang curl pkg-config libssl-dev make
           make install-deps
 
-      - name: Run Tests and Generate Coverage Report
-        run: make coverage # Generates a coverage report
-
-      - name: Upload Coverage Reports to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
+      - name: Run Benchmarks
+        run: make bench
         continue-on-error: false

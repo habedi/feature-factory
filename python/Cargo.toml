@@ -1,0 +1,25 @@
+[package]
+name = "feature-factory-py"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "feature_factory"
+crate-type = ["cdylib"]
+
+[dependencies]
+# Main feature-factory crate
+feature-factory = { path = ".." }
+
+# PyO3 ecosystem
+pyo3 = { version = "0.22.2", features = ["abi3-py310", "extension-module"] }
+pyo3-asyncio = { version = "0.22.2", features = ["tokio-runtime"] }
+pyo3-arrow = "0.11.0"
+
+# Async runtime
+tokio = { version = "1", features = ["rt-multi-thread"] }
+
+# DataFusion and Arrow dependencies to match the main crate
+datafusion = "46.0.0"
+arrow = "54.2.1"

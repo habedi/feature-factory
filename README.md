@@ -1,18 +1,24 @@
 <div align="center">
   <picture>
-    <img alt="Weldon the Penguin" src="assets/logo.png" height="40%" width="40%">
+    <img alt="Feature Factory Logo" src="logo.png" height="30%" width="30%">
   </picture>
+<br>
+
+<h2>Feature Factory</h2>
+
+[![Tests](https://img.shields.io/github/actions/workflow/status/habedi/feature-factory/tests.yml?label=tests&style=flat&labelColor=282c34&logo=github)](https://github.com/habedi/feature-factory/actions/workflows/tests.yml)
+[![Code Coverage](https://img.shields.io/codecov/c/github/habedi/feature-factory?label=coverage&style=flat&labelColor=282c34&logo=codecov)](https://codecov.io/gh/habedi/feature-factory)
+[![Code Quality](https://img.shields.io/codefactor/grade/github/habedi/feature-factory?label=code%20quality&style=flat&labelColor=282c34&logo=codefactor)](https://www.codefactor.io/repository/github/habedi/feature-factory)
+[![Crates.io](https://img.shields.io/crates/v/feature-factory.svg?label=crates.io&style=flat&labelColor=282c34&color=fc8d62&logo=rust)](https://crates.io/crates/feature-factory)
+[![Docs.rs](https://img.shields.io/badge/docs-feature-factory-66c2a5?style=flat&labelColor=282c34&logo=docs.rs)](https://docs.rs/feature-factory)
+[![MSRV](https://img.shields.io/badge/msrv-1.83.0-informational?style=flat&labelColor=282c34&logo=rust)](https://www.rust-lang.org)
+[![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-007ec6?style=flat&labelColor=282c34&logo=open-source-initiative)](https://github.com/habedi/feature-factory)
+
+A feature engineering library for Rust
+
 </div>
 
-## Feature Factory
-
-[![Tests](https://img.shields.io/github/actions/workflow/status/habedi/feature-factory/tests.yml?label=tests&style=flat&labelColor=282c34&color=4caf50&logo=github)](https://github.com/habedi/feature-factory/actions/workflows/tests.yml)
-[![Code Coverage](https://img.shields.io/codecov/c/github/habedi/feature-factory?style=flat&labelColor=282c34&color=ffca28&logo=codecov)](https://codecov.io/gh/habedi/feature-factory)
-[![CodeFactor](https://img.shields.io/codefactor/grade/github/habedi/feature-factory?style=flat&labelColor=282c34&color=4caf50&logo=codefactor)](https://www.codefactor.io/repository/github/habedi/feature-factory)
-[![Crates.io](https://img.shields.io/crates/v/feature-factory.svg?style=flat&labelColor=282c34&color=f46623&logo=rust)](https://crates.io/crates/feature-factory)
-[![Docs.rs](https://img.shields.io/badge/docs.rs-feature--factory-66c2a5?style=flat&labelColor=282c34&logo=docs.rs)](https://docs.rs/feature-factory)
-[![MSRV](https://img.shields.io/badge/MSRV-1.83.0-007ec6?label=msrv&style=flat&labelColor=282c34&logo=rust)](https://github.com/rust-lang/rust/releases/tag/1.83.0)
-[![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-007ec6?style=flat&labelColor=282c34&logo=open-source-initiative)](https://github.com/habedi/feature-factory)
+---
 
 Feature Factory is a feature engineering library for Rust built on top
 of [Apache DataFusion](https://datafusion.apache.org/).
