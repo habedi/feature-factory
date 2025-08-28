@@ -4,12 +4,11 @@ BINARY_NAME := $(or $(PROJ_BINARY), $(notdir $(PROJ_REPO)))
 BINARY = :target/release/$(BINARY_NAME)
 PATH := /snap/bin:$(PATH)
 RUST_BACKTRACE := 0
-DEBUG_SPART := 0
 RUST_LOG        := info
 WHEEL_DIR       := dist
-PYSPART_DIR     := pyspart
+PYTHON_DIR     := python
 PY_DEP_MNGR     := uv
-WHEEL_FILE      := $(shell ls $(PYSPART_DIR)/$(WHEEL_DIR)/pyspart-*.whl 2>/dev/null | head -n 1)
+WHEEL_FILE      := $(shell ls $(PYTHON_DIR)/$(WHEEL_DIR)/feature_factory-*.whl 2>/dev/null | head -n 1)
 
 # Default target
 .DEFAULT_GOAL := help
@@ -30,45 +29,33 @@ format: ## Format Rust files
 .PHONY: test
 test: format ## Run the tests
 	@echo "Running tests..."
-	@DEBUG_SPART=$(DEBUG_SPART) RUST_BACKTRACE=$(RUST_BACKTRACE) cargo test -- --nocapture
+	@RUST_BACKTRACE=$(RUST_BACKTRACE) cargo test -- --nocapture
 
 .PHONY: coverage
 coverage: format ## Generate test coverage report
 	@echo "Generating test coverage report..."
-	@DEBUG_SPART=$(DEBUG_SPART) cargo tarpaulin --out Xml --out Html
+	@cargo tarpaulin --out Xml --out Html
 
 .PHONY: build
 build: format ## Build the binary for the current platform
 	@echo "Building the project..."
-	@DEBUG_SPART=$(DEBUG_SPART) cargo build --release
+	@cargo build --release
 
 .PHONY: run
 run: build ## Build and run the binary
 	@echo "Running the $(BINARY) binary..."
-	@DEBUG_SPART=$(DEBUG_SPART) ./$(BINARY)
+	@./$(BINARY)
 
 .PHONY: run-examples
 run-examples: build ## Run the Rust examples
 	@echo "Running Rust examples..."
-	@cargo run --example quadtree
-	@cargo run --example octree
-	@cargo run --example kdtree
-	@cargo run --example rtree
-
-.PHONY: run-py-examples
-run-py-examples: develop-py ## Run the Python examples
-	@echo "Running Python examples..."
-	@bash -c "source .venv/bin/activate && python pyspart/examples/quadtree.py"
-	@bash -c "source .venv/bin/activate && python pyspart/examples/octree.py"
-	@bash -c "source .venv/bin/activate && python pyspart/examples/kdtree.py"
-	@bash -c "source .venv/bin/activate && python pyspart/examples/rtree.py"
-	@bash -c "source .venv/bin/activate && python pyspart/examples/rstar_tree.py"
+	@cargo run --example basic_usage
 
 .PHONY: clean
 clean: ## Remove generated and temporary files
 	@echo "Cleaning up..."
 	@cargo clean
-	@rm -rf $(WHEEL_DIR) dist/ $(PYSPART_DIR)/$(WHEEL_DIR) $(PYSPART_DIR)/*.so $(PYSPART_DIR)/target
+	@rm -rf $(WHEEL_DIR) dist/ $(PYTHON_DIR)/$(WHEEL_DIR) $(PYTHON_DIR)/*.so $(PYTHON_DIR)/target
 
 .PHONY: install-snap
 install-snap: ## Install a few dependencies using Snapcraft
@@ -90,7 +77,7 @@ install-deps: install-snap ## Install development dependencies
 .PHONY: lint
 lint: format ## Run linters on Rust files
 	@echo "Linting Rust files..."
-	@DEBUG_SPART=$(DEBUG_SPART) cargo clippy -- -D warnings
+	@cargo clippy -- -D warnings
 
 .PHONY: publish
 publish: ## Publish the package to crates.io (requires CARGO_REGISTRY_TOKEN to be set)
@@ -100,7 +87,7 @@ publish: ## Publish the package to crates.io (requires CARGO_REGISTRY_TOKEN to b
 .PHONY: bench
 bench: ## Run benchmarks
 	@echo "Running benchmarks..."
-	@DEBUG_SPART=$(DEBUG_SPART) cargo bench
+	@cargo bench
 
 .PHONY: audit
 audit: ## Run security audit on Rust dependencies
@@ -110,7 +97,7 @@ audit: ## Run security audit on Rust dependencies
 .PHONY: nextest
 nextest: ## Run tests using nextest
 	@echo "Running tests using nextest..."
-	@DEBUG_SPART=$(DEBUG_SPART) RUST_BACKTRACE=$(RUST_BACKTRACE) cargo nextest run
+	@RUST_BACKTRACE=$(RUST_BACKTRACE) cargo nextest run
 
 .PHONY: docs
 docs: format ## Generate the documentation
@@ -127,20 +114,20 @@ fix-lint: ## Fix the linter warnings
 ########################################################################################
 
 .PHONY: develop-py
-develop-py: ## Build and install PySpart in the current Python environment
-	@echo "Building and installing PySpart..."
+develop-py: ## Build and install feature-factory in the current Python environment
+	@echo "Building and installing feature-factory..."
 	# Note: Maturin does not work when CONDA_PREFIX and VIRTUAL_ENV are both set
-	@bash -c "source .venv/bin/activate && cd $(PYSPART_DIR) && unset CONDA_PREFIX && maturin develop"
+	@bash -c "source .venv/bin/activate && unset CONDA_PREFIX && maturin develop --manifest-path $(PYTHON_DIR)/Cargo.toml"
 
 .PHONY: wheel
-wheel: ## Build the wheel file for PySpart
-	@echo "Building the PySpart wheel..."
-	@(cd $(PYSPART_DIR) && maturin build --release --out $(WHEEL_DIR) --auditwheel check)
+wheel: ## Build the wheel file for feature-factory
+	@echo "Building the feature-factory wheel..."
+	@maturin build --release --out $(WHEEL_DIR) --manifest-path $(PYTHON_DIR)/Cargo.toml
 
 .PHONY: wheel-manylinux
-wheel-manylinux: ## Build the manylinux wheel file for PySpart (using Zig)
-	@echo "Building the manylinux PySpart wheel..."
-	@(cd $(PYSPART_DIR) && maturin build --release --out $(WHEEL_DIR) --auditwheel check --zig)
+wheel-manylinux: ## Build the manylinux wheel file for feature-factory (using Zig)
+	@echo "Building the manylinux feature-factory wheel..."
+	@maturin build --release --out $(WHEEL_DIR) --manifest-path $(PYTHON_DIR)/Cargo.toml --zig
 
 .PHONY: test-py
 test-py: develop-py ## Run Python tests
@@ -148,8 +135,8 @@ test-py: develop-py ## Run Python tests
 	@bash -c "source .venv/bin/activate && pytest"
 
 .PHONY: publish-py
-publish-py: wheel-manylinux ## Publish the PySpart wheel to PyPI (requires PYPI_TOKEN to be set)
-	@echo "Publishing PySpart to PyPI..."
+publish-py: wheel-manylinux ## Publish the feature-factory wheel to PyPI (requires PYPI_TOKEN to be set)
+	@echo "Publishing feature-factory to PyPI..."
 	@if [ -z "$(WHEEL_FILE)" ]; then \
 	   echo "Error: No wheel file found. Please run 'make wheel' first."; \
 	   exit 1; \

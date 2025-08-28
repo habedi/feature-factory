@@ -16,12 +16,13 @@ rust-version = "1.83"
 resolver = "2"
 
 include = [
-    "docs/**/*",
+    "assets/**/*",
     "src/**/*",
     "Cargo.toml",
     "README.md",
     "LICENSE-MIT",
-    "LICENSE-APACHE"
+    "LICENSE-APACHE",
+    "logo.png"
 ]
 
 [lib]
@@ -49,7 +50,7 @@ futures = "0.3.31"
 rayon = "1.10"
 
 [dev-dependencies]
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.7.0", features = ["html_reports"] }
 
 [[bench]]
 name = "project_benchmarks"
