@@ -1,8 +1,8 @@
-pub mod foundation;
+pub mod core;
 mod logging;
-pub mod pipeline;
 pub mod transformers;
 
-// Re-export commonly used items for convenience
-pub use foundation::errors::{FeatureFactoryError, FeatureFactoryResult};
-pub use foundation::traits::Transformer;
+// Re-export core components for a cleaner API
+pub use core::errors::{FeatureFactoryError, FeatureFactoryResult};
+pub use core::pipeline::Pipeline;
+pub use core::traits::Transformer;

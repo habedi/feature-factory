@@ -5,19 +5,19 @@
 //!
 //! ### Overview
 //!
-//! - The [`crate::foundation::traits::Transformer`] trait defines a common interface for implementing data transformation steps,
+//! - The [`crate::core::traits::Transformer`] trait defines a common interface for implementing data transformation steps,
 //!   supporting both stateful (requiring fitting) and stateless transformations.
 //! - The [`Pipeline`] struct enables chaining multiple transformers into a cohesive data transformation pipeline,
 //!   supporting both fitting and transforming operations.
 //! - Macros [`crate::impl_transformer`] and [`crate::make_pipeline`] simplify the creation and implementation
 //!   of transformers and pipelines.
 
-use crate::foundation::errors::{FeatureFactoryError, FeatureFactoryResult};
-use crate::foundation::traits::Transformer;
+use crate::core::errors::{FeatureFactoryError, FeatureFactoryResult};
+use crate::core::traits::Transformer;
 use datafusion::prelude::*;
 use std::time::Instant;
 
-/// Macro to implement the [`crate::foundation::traits::Transformer`] trait for Feature Factory transformers.
+/// Macro to implement the [`crate::core::traits::Transformer`] trait for Feature Factory transformers.
 ///
 /// The type must already have inherent methods:
 /// - `async fn fit(&mut self, &DataFrame) -> FeatureFactoryResult<()>`
@@ -59,18 +59,17 @@ use std::time::Instant;
 macro_rules! impl_transformer {
     ($ty:ty) => {
         #[async_trait::async_trait]
-        impl $crate::foundation::traits::Transformer for $ty {
+        impl $crate::core::traits::Transformer for $ty {
             async fn fit(
                 &mut self,
                 df: &datafusion::prelude::DataFrame,
-            ) -> $crate::foundation::errors::FeatureFactoryResult<()> {
+            ) -> $crate::core::errors::FeatureFactoryResult<()> {
                 <$ty>::fit(self, df).await
             }
             fn transform(
                 &self,
                 df: datafusion::prelude::DataFrame,
-            ) -> $crate::foundation::errors::FeatureFactoryResult<datafusion::prelude::DataFrame>
-            {
+            ) -> $crate::core::errors::FeatureFactoryResult<datafusion::prelude::DataFrame> {
                 <$ty>::transform(self, df)
             }
             fn is_stateful(&self) -> bool {
@@ -187,12 +186,12 @@ impl Pipeline {
 macro_rules! make_pipeline {
     ($verbose:expr, $(($name:expr, $transformer:expr)),+ $(,)?) => {
         {
-            let steps: Vec<(String, Box<dyn $crate::foundation::traits::Transformer + Send + Sync>)> = vec![
+            let steps: Vec<(String, Box<dyn $crate::core::traits::Transformer + Send + Sync>)> = vec![
                 $(
                     ($name.to_string(), Box::new($transformer)),
                 )+
             ];
-            $crate::pipeline::Pipeline::new(steps, $verbose)
+            $crate::core::pipeline::Pipeline::new(steps, $verbose)
         }
     };
 }
@@ -200,7 +199,7 @@ macro_rules! make_pipeline {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::foundation::errors::FeatureFactoryError;
+    use crate::core::errors::FeatureFactoryError;
 
     struct DummyTransformer {
         fitted: bool,

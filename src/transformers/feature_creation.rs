@@ -11,7 +11,7 @@
 //! Each transformer returns a new DataFrame with the transformed columns.
 //! Errors are returned as [`FeatureFactoryError`], and results are wrapped in [`FeatureFactoryResult`].
 
-use crate::foundation::errors::{FeatureFactoryError, FeatureFactoryResult};
+use crate::core::errors::{FeatureFactoryError, FeatureFactoryResult};
 use crate::impl_transformer;
 use datafusion::dataframe::DataFrame;
 use datafusion_expr::{Expr, col, lit};

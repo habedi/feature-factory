@@ -15,7 +15,7 @@
 //! Each transformer returns a new DataFrame with transformed features.
 //! Errors are returned as [`FeatureFactoryError`], and results are wrapped in [`FeatureFactoryResult`].
 
-use crate::foundation::errors::{FeatureFactoryError, FeatureFactoryResult};
+use crate::core::errors::{FeatureFactoryError, FeatureFactoryResult};
 use crate::impl_transformer;
 use datafusion::dataframe::DataFrame;
 use datafusion::functions_aggregate::approx_percentile_cont::approx_percentile_cont;

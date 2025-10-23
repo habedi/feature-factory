@@ -14,8 +14,8 @@
 //! Each transformer returns a new DataFrame with missing values handled accordingly.
 //! Errors are returned as [`FeatureFactoryError`], and results are wrapped in [`FeatureFactoryResult`].
 
-use crate::foundation::errors::{FeatureFactoryError, FeatureFactoryResult};
-use crate::foundation::types::validate_columns;
+use crate::core::errors::{FeatureFactoryError, FeatureFactoryResult};
+use crate::core::types::validate_columns;
 use crate::impl_transformer;
 use datafusion::dataframe::DataFrame;
 use datafusion::functions_aggregate::expr_fn::{approx_percentile_cont, avg, count};
@@ -434,7 +434,7 @@ impl DropMissingData {
             .reduce(|acc, expr| acc.and(expr))
             .unwrap();
         df.filter(combined)
-            .map_err(crate::foundation::errors::FeatureFactoryError::from)
+            .map_err(crate::core::errors::FeatureFactoryError::from)
     }
 
     // This transformer is stateless.

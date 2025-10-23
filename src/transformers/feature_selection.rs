@@ -24,8 +24,8 @@
 //! Each transformer returns a new DataFrame with the selected features.
 //! Errors are returned as [`FeatureFactoryError`], and results are wrapped in [`FeatureFactoryResult`].
 
-use crate::foundation::errors::{FeatureFactoryError, FeatureFactoryResult};
-use crate::foundation::types::is_numeric;
+use crate::core::errors::{FeatureFactoryError, FeatureFactoryResult};
+use crate::core::types::is_numeric;
 use crate::impl_transformer;
 use datafusion::arrow::array::{Array, StringArray, as_primitive_array};
 use datafusion::arrow::datatypes::{DataType, Float64Type, UInt64Type};

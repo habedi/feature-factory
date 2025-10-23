@@ -1,8 +1,8 @@
-//! ## Foundation Traits
+//! ## Core Traits
 //!
 //! This module defines the core traits used throughout the Feature Factory library.
 
-use crate::foundation::errors::FeatureFactoryResult;
+use crate::core::errors::FeatureFactoryResult;
 use async_trait::async_trait;
 use datafusion::prelude::DataFrame;
 
@@ -41,7 +41,7 @@ pub trait Transformer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::foundation::errors::FeatureFactoryError;
+    use crate::core::errors::FeatureFactoryError;
 
     struct DummyTransformer {
         fitted: bool,

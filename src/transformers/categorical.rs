@@ -14,8 +14,8 @@
 //! Each transformer returns a new DataFrame with the applied encodings.
 //! Errors are returned as `FeatureFactoryError`, and results are wrapped in `FeatureFactoryResult`.
 
-use crate::foundation::errors::{FeatureFactoryError, FeatureFactoryResult};
-use crate::foundation::types::{
+use crate::core::errors::{FeatureFactoryError, FeatureFactoryResult};
+use crate::core::types::{
     sanitize_category, validate_numeric_column, validate_string_column, validate_string_columns,
 };
 use crate::impl_transformer;

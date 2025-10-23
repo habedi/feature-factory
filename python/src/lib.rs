@@ -3,15 +3,15 @@ use std::sync::{Arc, OnceLock};
 use arrow::pyarrow::{FromPyArrow, ToPyArrow};
 use arrow::record_batch::RecordBatch;
 use datafusion::prelude::{DataFrame, SessionContext};
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use tokio::runtime::Runtime;
 use tokio::sync::Mutex;
 
-// feature-factory crate imports
+// `feature-factory` crate imports
 use ::feature_factory::FeatureFactoryError as RustFeatureFactoryError;
 use ::feature_factory::Transformer as RustTransformer;
-use ::feature_factory::pipeline::Pipeline as RustPipeline;
+use ::feature_factory::Pipeline as RustPipeline;
 use ::feature_factory::transformers::imputation::{
     ArbitraryNumberImputer as RustArbitraryNumberImputer,
     DropMissingData as RustDropMissingData,
@@ -95,10 +95,20 @@ pub struct PyMeanMedianImputer {
 #[pymethods]
 impl PyMeanMedianImputer {
     #[new]
-    fn new(columns: Vec<String>, strategy: ImputeStrategy) -> Self {
-        Self {
-            inner: Arc::new(Mutex::new(RustMeanMedianImputer::new(columns, strategy))),
-        }
+    fn new(columns: Vec<String>, strategy: String) -> PyResult<Self> {
+        let strat = match strategy.to_lowercase().as_str() {
+            "mean" => ImputeStrategy::Mean,
+            "median" => ImputeStrategy::Median,
+            other => {
+                return Err(PyValueError::new_err(format!(
+                    "Invalid strategy '{}'. Use 'mean' or 'median'",
+                    other
+                )))
+            }
+        };
+        Ok(Self {
+            inner: Arc::new(Mutex::new(RustMeanMedianImputer::new(columns, strat))),
+        })
     }
 
     fn fit(&self, data: &Bound<'_, PyAny>) -> PyResult<()> {
@@ -221,21 +231,39 @@ pub struct PyPipeline {
 #[pymethods]
 impl PyPipeline {
     #[new]
-    fn new(steps: Vec<(String, PyTransformer)>, verbose: bool) -> Self {
-        let rust_steps: Vec<(String, Box<dyn RustTransformer + Send + Sync>)> = steps
-            .into_iter()
-            .map(|(name, t)| {
-                let boxed: Box<dyn RustTransformer + Send + Sync> = match t {
-                    PyTransformer::MeanMedianImputer(v) => v.as_rust_transformer(),
-                    PyTransformer::ArbitraryNumberImputer(v) => v.as_rust_transformer(),
-                    PyTransformer::DropMissingData(v) => v.as_rust_transformer(),
-                };
-                (name, boxed)
-            })
-            .collect();
-        Self {
+    fn new(steps: Vec<(String, PyObject)>, verbose: bool) -> PyResult<Self> {
+        let rust_steps: PyResult<Vec<(String, Box<dyn RustTransformer + Send + Sync>)>> =
+            Python::with_gil(|py| {
+                steps
+                    .into_iter()
+                    .map(|(name, obj)| {
+                        let any = obj.as_ref(py);
+                        if let Ok(cell) = any.downcast::<pyo3::PyCell<PyMeanMedianImputer>>() {
+                            let inst = cell.borrow().clone();
+                            Ok((name, inst.as_rust_transformer()))
+                        } else if let Ok(cell) =
+                            any.downcast::<pyo3::PyCell<PyArbitraryNumberImputer>>()
+                        {
+                            let inst = cell.borrow().clone();
+                            Ok((name, inst.as_rust_transformer()))
+                        } else if let Ok(cell) =
+                            any.downcast::<pyo3::PyCell<PyDropMissingData>>()
+                        {
+                            let inst = cell.borrow().clone();
+                            Ok((name, inst.as_rust_transformer()))
+                        } else {
+                            Err(PyTypeError::new_err(format!(
+                                "Unsupported transformer type for step '{}'",
+                                name
+                            )))
+                        }
+                    })
+                    .collect()
+            });
+        let rust_steps = rust_steps?;
+        Ok(Self {
             inner: RustPipeline::new(rust_steps, verbose),
-        }
+        })
     }
 
     fn fit(&mut self, data: &Bound<'_, PyAny>) -> PyResult<()> {
@@ -271,7 +299,7 @@ impl PyPipeline {
 #[pymodule]
 fn feature_factory(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("FeatureFactoryError", py.get_type::<FeatureFactoryError>())?;
-    m.add_class::<ImputeStrategy>()?;
+    // Do not expose the internal Rust enum directly; Python uses string strategies instead.
     m.add_class::<PyMeanMedianImputer>()?;
     m.add_class::<PyArbitraryNumberImputer>()?;
     m.add_class::<PyDropMissingData>()?;
