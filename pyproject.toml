@@ -1,7 +1,7 @@
 [project]
 name = "feature-factory"
 version = "0.1.0"
-description = "Python environment for Feature Factory library"
+description = "The Python environment for Feature Factory project"
 
 requires-python = ">=3.10,<4.0"
 dependencies = [

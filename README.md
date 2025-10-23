@@ -8,7 +8,7 @@
 
 [![Tests](https://img.shields.io/github/actions/workflow/status/habedi/feature-factory/tests.yml?label=tests&style=flat&labelColor=282c34&logo=github)](https://github.com/habedi/feature-factory/actions/workflows/tests.yml)
 [![Code Coverage](https://img.shields.io/codecov/c/github/habedi/feature-factory?label=coverage&style=flat&labelColor=282c34&logo=codecov)](https://codecov.io/gh/habedi/feature-factory)
-[![Code Quality](https://img.shields.io/codefactor/grade/github/habedi/feature-factory?label=code%20quality&style=flat&labelColor=282c34&logo=codefactor)](https://www.codefactor.io/repository/github/habedi/feature-factory)
+[![Code Quality](https://img.shields.io/codefactor/grade/github/habedi/feature-factory?label=quality&style=flat&labelColor=282c34&logo=codefactor)](https://www.codefactor.io/repository/github/habedi/feature-factory)
 [![Crates.io](https://img.shields.io/crates/v/feature-factory.svg?label=crates.io&style=flat&labelColor=282c34&color=fc8d62&logo=rust)](https://crates.io/crates/feature-factory)
 [![Docs.rs](https://img.shields.io/badge/docs-feature-factory-66c2a5?style=flat&labelColor=282c34&logo=docs.rs)](https://docs.rs/feature-factory)
 [![MSRV](https://img.shields.io/badge/msrv-1.83.0-informational?style=flat&labelColor=282c34&logo=rust)](https://www.rust-lang.org)
@@ -22,18 +22,18 @@ A feature engineering library for Rust
 
 Feature Factory is a feature engineering library for Rust built on top
 of [Apache DataFusion](https://datafusion.apache.org/).
-It uses DataFusion internally for fast, in-memory data processing.
+It uses DataFusion internally for fast, in-memory data transformations.
 It is inspired by the [Feature-engine](https://feature-engine.readthedocs.io/en/latest/) Python library and
 provides a wide range of components (referred to as transformers) for common feature engineering tasks like imputation,
 encoding, discretization, and feature selection.
 
 Feature Factory aims to be feature-rich and provide an API similar to [Scikit-learn](https://scikit-learn.org/stable/),
-with the performance benefits of Rust and Apache DataFusion. Feature Factory transformers follow
-a [fit-transform paradigm](https://scikit-learn.org/stable/data_transforms.html), where each transformer provides a
-constructor, a `fit` method, and a `transform` method. Given an input dataframe, a transformer applies a
-transformation to the data and returns a new dataframe.
-The library also provides a pipeline API that allows users to chain multiple transformers together to create data
-transformation pipelines for feature engineering.
+with the performance benefits of Rust and Apache DataFusion.
+Feature Factory transformers follow a [fit-transform paradigm](https://scikit-learn.org/stable/data_transforms.html)
+where each transformer provides a constructor, a `fit` method, and a `transform` method.
+Given an input dataframe, a transformer applies a transformation to the data and returns a new dataframe.
+It also provides a pipeline API that allows users to chain multiple transformers together to create data transformation
+pipelines for feature engineering.
 
 > [!IMPORTANT]
 > Feature Factory is currently in the early stage of development. APIs are unstable and may change without notice.
@@ -106,7 +106,7 @@ All transformers implement the [`Transformer`](src/pipeline.rs) trait, which inc
 
 The figure below shows a high-level overview of how a single Feature Factory transformer works:
 
-![Feature Factory Transformer](assets/transformer_architecture.svg)
+![Feature Factory Transformer](docs/assets/diagrams/transformer_architecture.svg)
 
 > [!IMPORTANT]
 > In most cases, to avoid data leakage, the data used for training a transformer must not be the same as the data that
@@ -120,7 +120,7 @@ Stateful transformers must be fitted before they're used in a pipeline.
 
 The figure below shows a high-level overview of how a Feature Factory pipeline works:
 
-![Feature Factory Pipeline](assets/pipeline_architecture.svg)
+![Feature Factory Pipeline](docs/assets/diagrams/pipeline_architecture.svg)
 
 > [!IMPORTANT]
 > Currently, to use a stateful transformer in a pipeline, it must be already fitted.

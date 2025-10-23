@@ -14,7 +14,8 @@
 //! Each transformer returns a new DataFrame with missing values handled accordingly.
 //! Errors are returned as [`FeatureFactoryError`], and results are wrapped in [`FeatureFactoryResult`].
 
-use crate::exceptions::{FeatureFactoryError, FeatureFactoryResult};
+use crate::foundation::errors::{FeatureFactoryError, FeatureFactoryResult};
+use crate::foundation::types::validate_columns;
 use crate::impl_transformer;
 use datafusion::dataframe::DataFrame;
 use datafusion::functions_aggregate::expr_fn::{approx_percentile_cont, avg, count};
@@ -24,21 +25,6 @@ use std::collections::HashMap;
 
 #[cfg(feature = "pyo3")]
 use pyo3::prelude::*;
-
-/// Validates that every column in `target_cols` exists in the DataFrame.
-/// Returns an error if any target column is missing.
-fn validate_columns(df: &DataFrame, target_cols: &[String]) -> FeatureFactoryResult<()> {
-    let schema = df.schema();
-    for col_name in target_cols {
-        if schema.field_with_name(None, col_name).is_err() {
-            return Err(FeatureFactoryError::MissingColumn(format!(
-                "Column '{}' not found in DataFrame",
-                col_name
-            )));
-        }
-    }
-    Ok(())
-}
 
 /// Constructs an expression equivalent to SQL COALESCE(col, fallback).
 /// This is implemented as a CASE expression: if `col` is not null then return it, otherwise return `fallback`.
@@ -448,7 +434,7 @@ impl DropMissingData {
             .reduce(|acc, expr| acc.and(expr))
             .unwrap();
         df.filter(combined)
-            .map_err(crate::exceptions::FeatureFactoryError::from)
+            .map_err(crate::foundation::errors::FeatureFactoryError::from)
     }
 
     // This transformer is stateless.

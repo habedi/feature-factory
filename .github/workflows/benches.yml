@@ -2,6 +2,9 @@ name: Run Benchmarks
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -13,7 +16,7 @@ jobs:
     strategy:
       matrix:
         # Define the Rust versions to test against
-        rust-version: [ "1.83.0", "stable", "beta" ]
+        rust-version: [ "1.85.1", "stable", "beta" ]
 
     steps:
       - name: Checkout Repository
@@ -32,4 +35,3 @@ jobs:
 
       - name: Run Benchmarks
         run: make bench
-        continue-on-error: false

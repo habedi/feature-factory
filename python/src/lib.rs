@@ -9,7 +9,7 @@ use tokio::runtime::Runtime;
 use tokio::sync::Mutex;
 
 // feature-factory crate imports
-use ::feature_factory::exceptions::FeatureFactoryError as RustFeatureFactoryError;
+use ::feature_factory::errors::FeatureFactoryError as RustFeatureFactoryError;
 use ::feature_factory::pipeline::{Pipeline as RustPipeline, Transformer as RustTransformer};
 use ::feature_factory::transformers::imputation::{
     ArbitraryNumberImputer as RustArbitraryNumberImputer,

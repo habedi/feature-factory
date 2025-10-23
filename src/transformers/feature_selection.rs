@@ -24,7 +24,8 @@
 //! Each transformer returns a new DataFrame with the selected features.
 //! Errors are returned as [`FeatureFactoryError`], and results are wrapped in [`FeatureFactoryResult`].
 
-use crate::exceptions::{FeatureFactoryError, FeatureFactoryResult};
+use crate::foundation::errors::{FeatureFactoryError, FeatureFactoryResult};
+use crate::foundation::types::is_numeric;
 use crate::impl_transformer;
 use datafusion::arrow::array::{Array, StringArray, as_primitive_array};
 use datafusion::arrow::datatypes::{DataType, Float64Type, UInt64Type};
@@ -34,11 +35,6 @@ use datafusion::logical_expr::{Expr, col};
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-
-/// Helper function that checks if a DataFusion data type is numeric (only handling Float64 here).
-fn is_numeric(dt: &DataType) -> bool {
-    matches!(dt, DataType::Float64)
-}
 
 /// Removes the specified columns from the DataFrame.
 pub struct DropFeatures {

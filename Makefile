@@ -8,6 +8,7 @@ RUST_LOG        := info
 WHEEL_DIR       := dist
 PYTHON_DIR     := python
 PY_DEP_MNGR     := uv
+DEBUG_FEATURE_FACTORY := 0
 WHEEL_FILE      := $(shell ls $(PYTHON_DIR)/$(WHEEL_DIR)/feature_factory-*.whl 2>/dev/null | head -n 1)
 
 # Default target
@@ -69,7 +70,7 @@ install-snap: ## Install a few dependencies using Snapcraft
 install-deps: install-snap ## Install development dependencies
 	@echo "Installing dependencies..."
 	@rustup component add rustfmt clippy
-	@cargo install cargo-tarpaulin
+	@cargo install cargo-tarpaulin cargo-audit cargo-careful
 	@cargo install --locked cargo-nextest --version 0.9.97-b.2
 	@sudo apt-get install -y python3-pip
 	@pip install $(PY_DEP_MNGR)
@@ -77,7 +78,7 @@ install-deps: install-snap ## Install development dependencies
 .PHONY: lint
 lint: format ## Run linters on Rust files
 	@echo "Linting Rust files..."
-	@cargo clippy -- -D warnings
+	@cargo clippy -- -D warnings -D clippy::unwrap_used -D clippy::expect_used
 
 .PHONY: publish
 publish: ## Publish the package to crates.io (requires CARGO_REGISTRY_TOKEN to be set)
@@ -107,7 +108,13 @@ docs: format ## Generate the documentation
 .PHONY: fix-lint
 fix-lint: ## Fix the linter warnings
 	@echo "Fixing linter warnings..."
-	@cargo clippy --fix --allow-dirty --allow-staged --all-targets --workspace --all-features -- -D warnings
+	@cargo clippy --fix --allow-dirty --allow-staged --all-targets --workspace --all-features \
+	-- -D warnings -D clippy::unwrap_used -D clippy::expect_used
+
+.PHONY: careful
+careful: ## Run security checks on Rust code
+	@echo "Running security checks..."
+	@DEBUG_FEATURE_FACTORY=$(DEBUG_FEATURE_FACTORY) RUST_BACKTRACE=$(RUST_BACKTRACE) cargo careful run
 
 ########################################################################################
 ## Python targets

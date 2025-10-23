@@ -11,7 +11,7 @@
 //! ### Example
 //!
 //! ```rust
-//! use feature_factory::exceptions::{FeatureFactoryError, FeatureFactoryResult};
+//! use feature_factory::errors::{FeatureFactoryError, FeatureFactoryResult};
 //!
 //! fn load_data() -> FeatureFactoryResult<()> {
 //!     Err(FeatureFactoryError::NotImplemented("CSV loading".into()))

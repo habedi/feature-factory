@@ -14,57 +14,16 @@
 //! Each transformer returns a new DataFrame with the applied encodings.
 //! Errors are returned as `FeatureFactoryError`, and results are wrapped in `FeatureFactoryResult`.
 
-use crate::exceptions::{FeatureFactoryError, FeatureFactoryResult};
+use crate::foundation::errors::{FeatureFactoryError, FeatureFactoryResult};
+use crate::foundation::types::{
+    sanitize_category, validate_numeric_column, validate_string_column, validate_string_columns,
+};
 use crate::impl_transformer;
 use datafusion::arrow::array::Array;
-use datafusion::arrow::datatypes::DataType;
 use datafusion::dataframe::DataFrame;
 use datafusion::functions_aggregate::expr_fn::{avg, count};
 use datafusion::logical_expr::{Case as DFCase, Expr, col, lit};
 use std::collections::HashMap;
-
-/// Validates that a column exists and is of Utf8 type.
-fn validate_string_column(df: &DataFrame, col_name: &str) -> FeatureFactoryResult<()> {
-    let field = df.schema().field_with_name(None, col_name).map_err(|_| {
-        FeatureFactoryError::MissingColumn(format!("Column '{}' not found", col_name))
-    })?;
-    if field.data_type() != &DataType::Utf8 {
-        return Err(FeatureFactoryError::InvalidParameter(format!(
-            "Column '{}' must be of type Utf8, but found {:?}",
-            col_name,
-            field.data_type()
-        )));
-    }
-    Ok(())
-}
-
-/// Validates that all columns in `cols` exist and are of Utf8 type.
-fn validate_string_columns(df: &DataFrame, cols: &[String]) -> FeatureFactoryResult<()> {
-    for col in cols {
-        validate_string_column(df, col)?;
-    }
-    Ok(())
-}
-
-/// Validates that a column exists and is numeric (Float64 or Int64).
-fn validate_numeric_column(df: &DataFrame, col_name: &str) -> FeatureFactoryResult<()> {
-    let field = df.schema().field_with_name(None, col_name).map_err(|_| {
-        FeatureFactoryError::MissingColumn(format!("Column '{}' not found", col_name))
-    })?;
-    match field.data_type() {
-        DataType::Float64 | DataType::Int64 => Ok(()),
-        dt => Err(FeatureFactoryError::InvalidParameter(format!(
-            "Column '{}' must be numeric (Float64 or Int64), but found {:?}",
-            col_name, dt
-        ))),
-    }
-}
-
-/// Sanitizes a category string so that it can be safely used as part of a column name.
-/// Non-alphanumeric characters are replaced with underscores.
-fn sanitize_category(cat: &str) -> String {
-    cat.replace(|c: char| !c.is_alphanumeric(), "_")
-}
 
 /// Helper function to build a CASE WHEN expression given a mapping from category strings to values.
 /// For each pair, the expression generated is:

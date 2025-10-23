@@ -5,7 +5,7 @@ use arrow::datatypes::{DataType, Field, Schema};
 use arrow::record_batch::RecordBatch;
 use datafusion::datasource::memory::MemTable;
 use datafusion::prelude::*;
-use feature_factory::exceptions::FeatureFactoryResult;
+use feature_factory::FeatureFactoryResult;
 use feature_factory::transformers::feature_selection::{
     DropConstantFeatures, DropCorrelatedFeatures, DropDuplicateFeatures, DropFeatures,
     DropHighPSIFeatures, MRMR, SelectByInformationValue, SelectBySingleFeaturePerformance,

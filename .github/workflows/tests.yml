@@ -17,13 +17,13 @@ jobs:
     strategy:
       matrix:
         # Define the Rust versions to test against
-        rust-version: [ "1.83.0", "stable", "beta" ]
+        rust-version: [ "1.8.1", "stable", "beta" ]
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up Rust ${{ matrix.rust-version }}
+      - name: Set Up Rust ${{ matrix.rust-version }}
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: ${{ matrix.rust-version }}
@@ -35,10 +35,10 @@ jobs:
           make install-deps
 
       - name: Run Tests and Generate Coverage Report
-        run: make coverage # Generates a coverage report
+        run: make coverage
 
       - name: Upload Coverage Reports to Codecov
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-        continue-on-error: false
+        continue-on-error: true

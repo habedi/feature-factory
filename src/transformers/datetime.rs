@@ -10,7 +10,7 @@
 //! Each transformer returns a new DataFrame with the added or modified columns.
 //! Errors are returned as `FeatureFactoryError`, and successful transformations are wrapped in `FeatureFactoryResult`.
 
-use crate::exceptions::{FeatureFactoryError, FeatureFactoryResult};
+use crate::foundation::errors::{FeatureFactoryError, FeatureFactoryResult};
 use crate::impl_transformer;
 use datafusion::arrow::datatypes::DataType;
 use datafusion::dataframe::DataFrame;
