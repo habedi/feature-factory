@@ -36,6 +36,7 @@ fn validate_datetime_column(df: &DataFrame, col_name: &str) -> FeatureFactoryRes
 /// For each column in `self.columns`, it adds the following new features:
 /// `<column>_year`, `<column>_month`, `<column>_day`, `<column>_hour`,
 /// `<column>_minute`, `<column>_second`, and `<column>_weekday`.
+#[derive(Clone)]
 pub struct DatetimeFeatures {
     pub columns: Vec<String>,
 }
@@ -102,6 +103,7 @@ impl DatetimeFeatures {
 }
 
 /// Time units for datetime subtraction.
+#[derive(Clone)]
 pub enum TimeUnit {
     Second,
     Minute,
@@ -139,6 +141,7 @@ fn timestamp_diff_expr(left: Expr, right: Expr, unit: &str) -> Expr {
 /// Computes time differences between two datetime columns.
 /// `new_features` is a list of tuples: (new_feature_name, left_column, right_column, time_unit).
 /// Transform validates that each left and right column exists and is of a datetime type.
+#[derive(Clone)]
 pub struct DatetimeSubtraction {
     pub new_features: Vec<(String, String, String, TimeUnit)>,
 }

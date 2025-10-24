@@ -186,6 +186,7 @@ impl ArbitraryNumberImputer {
 }
 
 /// Replaces missing values with a percentile value computed from the data.
+#[derive(Clone)]
 pub struct EndTailImputer {
     pub columns: Vec<String>,
     pub percentile: f64,
@@ -270,6 +271,7 @@ impl EndTailImputer {
 }
 
 /// Replaces missing values with the mode (or a provided default) for categorical columns.
+#[derive(Clone)]
 pub struct CategoricalImputer {
     pub columns: Vec<String>,
     pub default: Option<String>,
@@ -348,6 +350,7 @@ impl CategoricalImputer {
 }
 
 /// Adds additional Boolean indicator columns for missing values.
+#[derive(Clone)]
 pub struct AddMissingIndicator {
     pub columns: Vec<String>,
     pub suffix: String,

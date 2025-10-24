@@ -1,222 +1,99 @@
-use std::sync::{Arc, OnceLock};
+mod runtime;
+mod errors;
+mod conversion;
+mod transformers;
 
-use arrow::pyarrow::{FromPyArrow, ToPyArrow};
-use arrow::record_batch::RecordBatch;
-use datafusion::prelude::{DataFrame, SessionContext};
-use pyo3::exceptions::{PyTypeError, PyValueError};
+use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
-use tokio::runtime::Runtime;
-use tokio::sync::Mutex;
 
-// `feature-factory` crate imports
-use ::feature_factory::FeatureFactoryError as RustFeatureFactoryError;
-use ::feature_factory::Transformer as RustTransformer;
 use ::feature_factory::Pipeline as RustPipeline;
-use ::feature_factory::transformers::imputation::{
-    ArbitraryNumberImputer as RustArbitraryNumberImputer,
-    DropMissingData as RustDropMissingData,
-    ImputeStrategy,
-    MeanMedianImputer as RustMeanMedianImputer,
+use ::feature_factory::Transformer as RustTransformer;
+
+use crate::transformers::{
+    AsRustTransformer,
+    PyArbitraryNumberImputer,
+    PyDropMissingData,
+    PyMeanMedianImputer,
+    PyOneHotEncoder,
+    PyCountFrequencyEncoder,
+    PyOrdinalEncoder,
+    PyMeanEncoder,
+    PyWoEEncoder,
+    PyRareLabelEncoder,
+    PyDatetimeFeatures,
+    PyDatetimeSubtraction,
+    PyArbitraryDiscretizer,
+    PyEqualFrequencyDiscretizer,
+    PyEqualWidthDiscretizer,
+    PyGeometricWidthDiscretizer,
+    PyLogTransformer,
+    PyLogCpTransformer,
+    PyReciprocalTransformer,
+    PyPowerTransformer,
+    PyBoxCoxTransformer,
+    PyYeoJohnsonTransformer,
+    PyArcsinTransformer,
+    PyArbitraryOutlierCapper,
+    PyWinsorizer,
+    PyOutlierTrimmer,
+    PyRelativeFeatures,
+    PyCyclicalFeatures,
+    PyEndTailImputer,
+    PyCategoricalImputer,
+    PyAddMissingIndicator,
 };
+use crate::conversion::{df_to_pyarrow, pyarrow_to_df};
+use crate::errors::{to_py_err, FeatureFactoryError};
+use crate::runtime::runtime;
+use datafusion::prelude::{DataFrame, SessionContext};
 
 // ======================================================================================
-// Global Tokio runtime (single instance to avoid overhead).
+// Module
 // ======================================================================================
 
-static RUNTIME: OnceLock<Runtime> = OnceLock::new();
+#[pymodule]
+fn feature_factory(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add("FeatureFactoryError", py.get_type::<FeatureFactoryError>())?;
+    // Imputation
+    m.add_class::<PyMeanMedianImputer>()?;
+    m.add_class::<PyArbitraryNumberImputer>()?;
+    m.add_class::<PyDropMissingData>()?;
+    m.add_class::<PyEndTailImputer>()?;
+    m.add_class::<PyCategoricalImputer>()?;
+    m.add_class::<PyAddMissingIndicator>()?;
+    // Categorical
+    m.add_class::<PyOneHotEncoder>()?;
+    m.add_class::<PyCountFrequencyEncoder>()?;
+    m.add_class::<PyOrdinalEncoder>()?;
+    m.add_class::<PyMeanEncoder>()?;
+    m.add_class::<PyWoEEncoder>()?;
+    m.add_class::<PyRareLabelEncoder>()?;
+    // Datetime
+    m.add_class::<PyDatetimeFeatures>()?;
+    m.add_class::<PyDatetimeSubtraction>()?;
+    // Discretization
+    m.add_class::<PyArbitraryDiscretizer>()?;
+    m.add_class::<PyEqualFrequencyDiscretizer>()?;
+    m.add_class::<PyEqualWidthDiscretizer>()?;
+    m.add_class::<PyGeometricWidthDiscretizer>()?;
+    // Numerical
+    m.add_class::<PyLogTransformer>()?;
+    m.add_class::<PyLogCpTransformer>()?;
+    m.add_class::<PyReciprocalTransformer>()?;
+    m.add_class::<PyPowerTransformer>()?;
+    m.add_class::<PyBoxCoxTransformer>()?;
+    m.add_class::<PyYeoJohnsonTransformer>()?;
+    m.add_class::<PyArcsinTransformer>()?;
+    // Outliers
+    m.add_class::<PyArbitraryOutlierCapper>()?;
+    m.add_class::<PyWinsorizer>()?;
+    m.add_class::<PyOutlierTrimmer>()?;
+    // Feature creation
+    m.add_class::<PyRelativeFeatures>()?;
+    m.add_class::<PyCyclicalFeatures>()?;
 
-fn runtime() -> &'static Runtime {
-    RUNTIME.get_or_init(|| Runtime::new().expect("Failed to create Tokio runtime"))
-}
-
-// ======================================================================================
-// Error Handling
-// ======================================================================================
-
-pyo3::create_exception!(feature_factory, FeatureFactoryError, pyo3::exceptions::PyException);
-
-fn to_py_err(e: RustFeatureFactoryError) -> PyErr {
-    FeatureFactoryError::new_err(e.to_string())
-}
-
-// ======================================================================================
-// Data Conversion Helpers
-// ======================================================================================
-
-fn pyarrow_to_df(ctx: &SessionContext, obj: &Bound<'_, PyAny>) -> PyResult<DataFrame> {
-    let batch = RecordBatch::from_pyarrow_bound(obj)?;
-    ctx.read_batch(batch)
-        .map_err(|e| PyValueError::new_err(e.to_string()))
-}
-
-fn df_to_pyarrow(py: Python<'_>, df: DataFrame) -> PyResult<PyObject> {
-    let batches = runtime()
-        .block_on(df.collect())
-        .map_err(|e| PyValueError::new_err(e.to_string()))?;
-
-    if batches.is_empty() {
-        return Err(PyValueError::new_err("Empty DataFrame result"));
-    }
-    if batches.len() > 1 {
-        eprintln!(
-            "feature_factory: multiple RecordBatches produced; returning first only ({} total)",
-            batches.len()
-        );
-    }
-    batches[0].to_pyarrow(py)
-}
-
-// ======================================================================================
-// Transformer Wrapper Enum
-// ======================================================================================
-
-#[pyclass(name = "Transformer")]
-#[derive(Clone)]
-pub enum PyTransformer {
-    MeanMedianImputer(PyMeanMedianImputer),
-    ArbitraryNumberImputer(PyArbitraryNumberImputer),
-    DropMissingData(PyDropMissingData),
-}
-
-trait AsRustTransformer: Send + Sync {
-    fn as_rust_transformer(&self) -> Box<dyn RustTransformer + Send + Sync>;
-}
-
-// ======================================================================================
-// MeanMedianImputer (stateful)
-// ======================================================================================
-
-#[pyclass(name = "MeanMedianImputer")]
-#[derive(Clone)]
-pub struct PyMeanMedianImputer {
-    inner: Arc<Mutex<RustMeanMedianImputer>>,
-}
-
-#[pymethods]
-impl PyMeanMedianImputer {
-    #[new]
-    fn new(columns: Vec<String>, strategy: String) -> PyResult<Self> {
-        let strat = match strategy.to_lowercase().as_str() {
-            "mean" => ImputeStrategy::Mean,
-            "median" => ImputeStrategy::Median,
-            other => {
-                return Err(PyValueError::new_err(format!(
-                    "Invalid strategy '{}'. Use 'mean' or 'median'",
-                    other
-                )))
-            }
-        };
-        Ok(Self {
-            inner: Arc::new(Mutex::new(RustMeanMedianImputer::new(columns, strat))),
-        })
-    }
-
-    fn fit(&self, data: &Bound<'_, PyAny>) -> PyResult<()> {
-        let ctx = SessionContext::new();
-        let df = pyarrow_to_df(&ctx, data)?;
-        let inner = self.inner.clone();
-        runtime()
-            .block_on(async {
-                let mut guard = inner.lock().await;
-                guard.fit(&df).await
-            })
-            .map_err(to_py_err)?;
-        Ok(())
-    }
-
-    fn transform(&self, py: Python<'_>, data: &Bound<'_, PyAny>) -> PyResult<PyObject> {
-        let ctx = SessionContext::new();
-        let df = pyarrow_to_df(&ctx, data)?;
-        let inner = self.inner.clone();
-        let out_df = py.allow_threads(move || {
-            runtime()
-                .block_on(async {
-                    let guard = inner.lock().await;
-                    guard.transform(df)
-                })
-                .map_err(to_py_err)
-        })?;
-        df_to_pyarrow(py, out_df)
-    }
-}
-
-impl AsRustTransformer for PyMeanMedianImputer {
-    fn as_rust_transformer(&self) -> Box<dyn RustTransformer + Send + Sync> {
-        let cloned = runtime().block_on(async {
-            let guard = self.inner.lock().await;
-            guard.clone()
-        });
-        Box::new(cloned)
-    }
-}
-
-// ======================================================================================
-// ArbitraryNumberImputer (stateless)
-// ======================================================================================
-
-#[pyclass(name = "ArbitraryNumberImputer")]
-#[derive(Clone)]
-pub struct PyArbitraryNumberImputer {
-    inner: RustArbitraryNumberImputer,
-}
-
-#[pymethods]
-impl PyArbitraryNumberImputer {
-    #[new]
-    fn new(columns: Vec<String>, number: f64) -> Self {
-        Self {
-            inner: RustArbitraryNumberImputer::new(columns, number),
-        }
-    }
-
-    fn transform(&self, py: Python<'_>, data: &Bound<'_, PyAny>) -> PyResult<PyObject> {
-        let ctx = SessionContext::new();
-        let df = pyarrow_to_df(&ctx, data)?;
-        let out_df = self.inner.transform(df).map_err(to_py_err)?;
-        df_to_pyarrow(py, out_df)
-    }
-}
-
-impl AsRustTransformer for PyArbitraryNumberImputer {
-    fn as_rust_transformer(&self) -> Box<dyn RustTransformer + Send + Sync> {
-        Box::new(self.inner.clone())
-    }
-}
-
-// ======================================================================================
-// DropMissingData (stateless)
-// ======================================================================================
-
-#[pyclass(name = "DropMissingData")]
-#[derive(Clone)]
-pub struct PyDropMissingData {
-    inner: RustDropMissingData,
-}
-
-#[pymethods]
-impl PyDropMissingData {
-    #[new]
-    #[pyo3(signature = (columns=None))]
-    fn new(columns: Option<Vec<String>>) -> Self {
-        let inner = match columns {
-            Some(cols) => RustDropMissingData::with_columns(cols),
-            None => RustDropMissingData::new(),
-        };
-        Self { inner }
-    }
-
-    fn transform(&self, py: Python<'_>, data: &Bound<'_, PyAny>) -> PyResult<PyObject> {
-        let ctx = SessionContext::new();
-        let df = pyarrow_to_df(&ctx, data)?;
-        let out_df = self.inner.transform(df).map_err(to_py_err)?;
-        df_to_pyarrow(py, out_df)
-    }
-}
-
-impl AsRustTransformer for PyDropMissingData {
-    fn as_rust_transformer(&self) -> Box<dyn RustTransformer + Send + Sync> {
-        Box::new(self.inner.clone())
-    }
+    m.add_class::<PyPipeline>()?;
+    Ok(())
 }
 
 // ======================================================================================
@@ -237,48 +114,69 @@ impl PyPipeline {
                 steps
                     .into_iter()
                     .map(|(name, obj)| {
-                        let any = obj.as_ref(py);
-                        if let Ok(cell) = any.downcast::<pyo3::PyCell<PyMeanMedianImputer>>() {
-                            let inst = cell.borrow().clone();
-                            Ok((name, inst.as_rust_transformer()))
-                        } else if let Ok(cell) =
-                            any.downcast::<pyo3::PyCell<PyArbitraryNumberImputer>>()
-                        {
-                            let inst = cell.borrow().clone();
-                            Ok((name, inst.as_rust_transformer()))
-                        } else if let Ok(cell) =
-                            any.downcast::<pyo3::PyCell<PyDropMissingData>>()
-                        {
-                            let inst = cell.borrow().clone();
-                            Ok((name, inst.as_rust_transformer()))
-                        } else {
-                            Err(PyTypeError::new_err(format!(
-                                "Unsupported transformer type for step '{}'",
-                                name
-                            )))
+                        let any = obj.bind(py);
+                        macro_rules! try_downcast {
+                            ($t:ty) => {
+                                if let Ok(cell) = any.downcast::<$t>() {
+                                    let inst = cell.borrow().clone();
+                                    return Ok((name, inst.as_rust_transformer()));
+                                }
+                            };
                         }
+                        // Try each known transformer type
+                        try_downcast!(PyMeanMedianImputer);
+                        try_downcast!(PyArbitraryNumberImputer);
+                        try_downcast!(PyDropMissingData);
+                        try_downcast!(PyEndTailImputer);
+                        try_downcast!(PyCategoricalImputer);
+                        try_downcast!(PyAddMissingIndicator);
+                        try_downcast!(PyOneHotEncoder);
+                        try_downcast!(PyCountFrequencyEncoder);
+                        try_downcast!(PyOrdinalEncoder);
+                        try_downcast!(PyMeanEncoder);
+                        try_downcast!(PyWoEEncoder);
+                        try_downcast!(PyRareLabelEncoder);
+                        try_downcast!(PyDatetimeFeatures);
+                        try_downcast!(PyDatetimeSubtraction);
+                        try_downcast!(PyArbitraryDiscretizer);
+                        try_downcast!(PyEqualFrequencyDiscretizer);
+                        try_downcast!(PyEqualWidthDiscretizer);
+                        try_downcast!(PyGeometricWidthDiscretizer);
+                        try_downcast!(PyLogTransformer);
+                        try_downcast!(PyLogCpTransformer);
+                        try_downcast!(PyReciprocalTransformer);
+                        try_downcast!(PyPowerTransformer);
+                        try_downcast!(PyBoxCoxTransformer);
+                        try_downcast!(PyYeoJohnsonTransformer);
+                        try_downcast!(PyArcsinTransformer);
+                        try_downcast!(PyArbitraryOutlierCapper);
+                        try_downcast!(PyWinsorizer);
+                        try_downcast!(PyOutlierTrimmer);
+                        try_downcast!(PyRelativeFeatures);
+                        try_downcast!(PyCyclicalFeatures);
+
+                        Err(PyTypeError::new_err(format!(
+                            "Unsupported transformer type for step '{}'",
+                            name
+                        )))
                     })
                     .collect()
             });
         let rust_steps = rust_steps?;
-        Ok(Self {
-            inner: RustPipeline::new(rust_steps, verbose),
-        })
+        Ok(Self { inner: RustPipeline::new(rust_steps, verbose) })
     }
 
     fn fit(&mut self, data: &Bound<'_, PyAny>) -> PyResult<()> {
         let ctx = SessionContext::new();
         let df = pyarrow_to_df(&ctx, data)?;
-        runtime()
-            .block_on(self.inner.fit(&df))
-            .map_err(to_py_err)?;
+        runtime().block_on(self.inner.fit(&df)).map_err(to_py_err)?;
         Ok(())
     }
 
     fn transform(&self, py: Python<'_>, data: &Bound<'_, PyAny>) -> PyResult<PyObject> {
         let ctx = SessionContext::new();
         let df = pyarrow_to_df(&ctx, data)?;
-        let out_df = self.inner.transform(df).map_err(to_py_err)?;
+        let out_df: DataFrame = self.inner.transform(df).map_err(to_py_err)?;
         df_to_pyarrow(py, out_df)
     }
 
@@ -290,20 +188,4 @@ impl PyPipeline {
             .map_err(to_py_err)?;
         df_to_pyarrow(py, out_df)
     }
-}
-
-// ======================================================================================
-// Module
-// ======================================================================================
-
-#[pymodule]
-fn feature_factory(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add("FeatureFactoryError", py.get_type::<FeatureFactoryError>())?;
-    // Do not expose the internal Rust enum directly; Python uses string strategies instead.
-    m.add_class::<PyMeanMedianImputer>()?;
-    m.add_class::<PyArbitraryNumberImputer>()?;
-    m.add_class::<PyDropMissingData>()?;
-    m.add_class::<PyTransformer>()?;
-    m.add_class::<PyPipeline>()?;
-    Ok(())
 }

@@ -179,6 +179,7 @@ async fn compute_min_max(df: &DataFrame, col_name: &str) -> FeatureFactoryResult
 }
 
 /// Discretizes a column into arbitrary intervals defined by the user.
+#[derive(Clone)]
 pub struct ArbitraryDiscretizer {
     pub columns: Vec<String>,
     pub intervals: HashMap<String, Vec<(f64, f64, String)>>,
@@ -220,6 +221,7 @@ impl ArbitraryDiscretizer {
 }
 
 /// Splits a column into bins containing approximately equal numbers of values from the column.
+#[derive(Clone)]
 pub struct EqualFrequencyDiscretizer {
     pub columns: Vec<String>,
     pub bins: usize,
@@ -322,6 +324,7 @@ impl EqualFrequencyDiscretizer {
 }
 
 /// Splits a column into bins of equal width.
+#[derive(Clone)]
 pub struct EqualWidthDiscretizer {
     pub columns: Vec<String>,
     pub bins: usize,
@@ -389,6 +392,7 @@ impl EqualWidthDiscretizer {
 }
 
 /// Uses a geometric progression to determine bin boundaries.
+#[derive(Clone)]
 pub struct GeometricWidthDiscretizer {
     pub columns: Vec<String>,
     pub bins: usize,

@@ -56,6 +56,7 @@ impl MathFeatures {
 }
 
 /// Operations available for computing relative features.
+#[derive(Clone)]
 pub enum RelativeOperation {
     Ratio,         // target / reference
     Difference,    // target - reference
@@ -65,6 +66,7 @@ pub enum RelativeOperation {
 /// Creates new features by combining a target feature with a reference feature.
 /// Input is a vector of tuples with the following fields for each new feature:
 /// (new_feature_name, target_feature, reference_feature, operation).
+#[derive(Clone)]
 pub struct RelativeFeatures {
     pub features: Vec<(String, String, String, RelativeOperation)>,
 }
@@ -128,6 +130,7 @@ impl RelativeFeatures {
 }
 
 /// Methods for encoding cyclical features.
+#[derive(Clone)]
 pub enum CyclicalMethod {
     Sine,
     Cosine,
@@ -136,6 +139,7 @@ pub enum CyclicalMethod {
 /// Encodes a cyclical variable by computing either a sine or cosine transformation.
 /// The input is a vector of tuples with the following fields for each new feature:
 /// (new_feature_name, source_feature, period, method).
+#[derive(Clone)]
 pub struct CyclicalFeatures {
     pub features: Vec<(String, String, f64, CyclicalMethod)>,
 }

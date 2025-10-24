@@ -183,6 +183,7 @@ async fn compute_percentiles_for_column(
 }
 
 /// Caps outliers at user-defined lower and upper bounds so that values are within the specified range.
+#[derive(Clone)]
 pub struct ArbitraryOutlierCapper {
     pub columns: Vec<String>,
     pub lower_caps: HashMap<String, f64>,
@@ -235,6 +236,7 @@ impl ArbitraryOutlierCapper {
 }
 
 /// Caps outliers based on percentile thresholds.
+#[derive(Clone)]
 pub struct Winsorizer {
     pub columns: Vec<String>,
     pub lower_percentile: f64,
@@ -322,6 +324,7 @@ impl Winsorizer {
 }
 
 /// Removes rows with outliers based on percentile thresholds.
+#[derive(Clone)]
 pub struct OutlierTrimmer {
     pub columns: Vec<String>,
     pub lower_percentile: f64,
