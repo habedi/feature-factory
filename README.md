@@ -6,13 +6,13 @@
 
 <h2>Feature Factory</h2>
 
-[![Tests](https://img.shields.io/github/actions/workflow/status/habedi/feature-factory/tests.yml?label=tests&style=flat&labelColor=282c34&logo=github)](https://github.com/habedi/feature-factory/actions/workflows/tests.yml)
-[![Code Coverage](https://img.shields.io/codecov/c/github/habedi/feature-factory?label=coverage&style=flat&labelColor=282c34&logo=codecov)](https://codecov.io/gh/habedi/feature-factory)
-[![Code Quality](https://img.shields.io/codefactor/grade/github/habedi/feature-factory?label=quality&style=flat&labelColor=282c34&logo=codefactor)](https://www.codefactor.io/repository/github/habedi/feature-factory)
+[![Tests](https://img.shields.io/github/actions/workflow/status/CogitatorTech/feature-factory/tests.yml?label=tests&style=flat&labelColor=282c34&logo=github)](https://github.com/CogitatorTech/feature-factory/actions/workflows/tests.yml)
+[![Code Coverage](https://img.shields.io/codecov/c/github/CogitatorTech/feature-factory?label=coverage&style=flat&labelColor=282c34&logo=codecov)](https://codecov.io/gh/CogitatorTech/feature-factory)
+[![Code Quality](https://img.shields.io/codefactor/grade/github/CogitatorTech/feature-factory?label=quality&style=flat&labelColor=282c34&logo=codefactor)](https://www.codefactor.io/repository/github/CogitatorTech/feature-factory)
 [![Crates.io](https://img.shields.io/crates/v/feature-factory.svg?label=crates.io&style=flat&labelColor=282c34&color=fc8d62&logo=rust)](https://crates.io/crates/feature-factory)
 [![Docs.rs](https://img.shields.io/badge/docs-feature-factory-66c2a5?style=flat&labelColor=282c34&logo=docs.rs)](https://docs.rs/feature-factory)
 [![MSRV](https://img.shields.io/badge/msrv-1.85.1-informational?style=flat&labelColor=282c34&logo=rust)](https://www.rust-lang.org)
-[![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-007ec6?style=flat&labelColor=282c34&logo=open-source-initiative)](https://github.com/habedi/feature-factory)
+[![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-007ec6?style=flat&labelColor=282c34&logo=open-source-initiative)](https://github.com/CogitatorTech/feature-factory)
 
 A feature engineering library for Rust
 

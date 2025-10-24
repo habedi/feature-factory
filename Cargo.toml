@@ -2,12 +2,12 @@
 name = "feature-factory"
 version = "0.1.1-alpha.2"
 description = "A feature engineering library for Rust"
-repository = "https://github.com/habedi/feature-factory"
+repository = "https://github.com/CogitatorTech/feature-factory"
 license = "MIT OR Apache-2.0"
 readme = "README.md"
 keywords = ["feature-engineering", "machine-learning", "data-science", "feature-selection", "feature-extraction"]
 authors = ["Hassan Abedi <hassan.abedi.t@gmail.com>"]
-homepage = "https://github.com/habedi/feature-factory"
+homepage = "https://github.com/CogitatorTech/feature-factory"
 documentation = "https://docs.rs/feature-factory"
 categories = ["algorithms", "data-structures"]
 edition = "2024"
