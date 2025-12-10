@@ -197,7 +197,9 @@ impl DropDuplicateFeatures {
         let mut seen: Vec<(String, Arc<dyn Array>)> = Vec::new();
         for field in schema.fields() {
             let name = field.name().clone();
-            let array = batch.column_by_name(&name).unwrap();
+            let array = batch.column_by_name(&name).ok_or_else(|| {
+                FeatureFactoryError::MissingColumn(format!("Column {} missing", name))
+            })?;
             let mut is_duplicate = false;
             for (_seen_name, seen_array) in &seen {
                 if array == seen_array {
@@ -377,7 +379,10 @@ impl SmartCorrelatedSelection {
         let mut stats: Vec<(String, f64, Vec<f64>)> = Vec::new();
         for field in &numeric_fields {
             let name = field.name();
-            let array = as_primitive_array::<Float64Type>(batch.column_by_name(name).unwrap());
+            let array =
+                as_primitive_array::<Float64Type>(batch.column_by_name(name).ok_or_else(|| {
+                    FeatureFactoryError::MissingColumn(format!("Column {} missing", name))
+                })?);
             let vec: Vec<f64> = array.iter().flatten().collect();
             let n = vec.len() as f64;
             let mean = vec.iter().sum::<f64>() / n;
@@ -524,7 +529,9 @@ impl DropHighPSIFeatures {
                 let ref_vals: Vec<f64> = ref_array.iter().flatten().par_bridge().collect();
                 let curr_vals: Vec<f64> = curr_array.iter().flatten().par_bridge().collect();
                 let mut sorted = ref_vals.clone();
-                sorted.par_sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+                sorted.par_sort_unstable_by(|a, b| {
+                    a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+                });
                 let mut bins = Vec::new();
                 for i in 0..11 {
                     let idx = ((sorted.len() - 1) as f64 * i as f64 / 10.0).round() as usize;
@@ -619,7 +626,9 @@ impl SelectByInformationValue {
                 if vals.is_empty() {
                     continue;
                 }
-                vals.par_sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+                vals.par_sort_unstable_by(|a, b| {
+                    a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+                });
                 let mut bins = Vec::new();
                 for i in 0..11 {
                     let idx = ((vals.len() - 1) as f64 * i as f64 / 10.0).round() as usize;
@@ -823,12 +832,15 @@ impl SelectByTargetMeanPerformance {
             if name == &self.target || !is_numeric(field.data_type()) {
                 continue;
             }
-            let array = as_primitive_array::<Float64Type>(batch.column_by_name(name).unwrap());
+            let array =
+                as_primitive_array::<Float64Type>(batch.column_by_name(name).ok_or_else(|| {
+                    FeatureFactoryError::MissingColumn(format!("Column {} missing", name))
+                })?);
             let mut vals: Vec<f64> = array.iter().flatten().collect();
             if vals.is_empty() {
                 continue;
             }
-            vals.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            vals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
             let median = vals[vals.len() / 2];
             let mut group1 = Vec::new();
             let mut group2 = Vec::new();
@@ -923,7 +935,10 @@ impl MRMR {
             if name == &self.target || !is_numeric(field.data_type()) {
                 continue;
             }
-            let array = as_primitive_array::<Float64Type>(batch.column_by_name(name).unwrap());
+            let array =
+                as_primitive_array::<Float64Type>(batch.column_by_name(name).ok_or_else(|| {
+                    FeatureFactoryError::MissingColumn(format!("Column {} missing", name))
+                })?);
             let x: Vec<f64> = array.iter().flatten().collect();
             if x.len() != target_vals.len() || x.is_empty() {
                 continue;
@@ -947,14 +962,18 @@ impl MRMR {
             }
         }
         let mut selected = Vec::<String>::new();
-        candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         for (feat, _) in candidates {
             let mut redundant = false;
             for sel in &selected {
                 let array_feat =
-                    as_primitive_array::<Float64Type>(batch.column_by_name(&feat).unwrap());
+                    as_primitive_array::<Float64Type>(batch.column_by_name(&feat).ok_or_else(
+                        || FeatureFactoryError::MissingColumn(format!("Column {} missing", feat)),
+                    )?);
                 let array_sel =
-                    as_primitive_array::<Float64Type>(batch.column_by_name(sel).unwrap());
+                    as_primitive_array::<Float64Type>(batch.column_by_name(sel).ok_or_else(
+                        || FeatureFactoryError::MissingColumn(format!("Column {} missing", sel)),
+                    )?);
                 let x: Vec<f64> = array_feat.iter().flatten().collect();
                 let y: Vec<f64> = array_sel.iter().flatten().collect();
                 if x.len() != y.len() || x.is_empty() {

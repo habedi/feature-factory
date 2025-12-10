@@ -432,10 +432,15 @@ impl DropMissingData {
             .iter()
             .map(|col_name| col(col_name).is_not_null())
             .collect();
-        let combined = predicates
-            .into_iter()
-            .reduce(|acc, expr| acc.and(expr))
-            .unwrap();
+        if predicates.is_empty() {
+            return Ok(df);
+        }
+        let combined = if let Some(first) = predicates.into_iter().reduce(|acc, expr| acc.and(expr))
+        {
+            first
+        } else {
+            return Ok(df);
+        };
         df.filter(combined)
             .map_err(crate::core::errors::FeatureFactoryError::from)
     }
