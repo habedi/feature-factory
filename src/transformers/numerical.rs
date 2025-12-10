@@ -15,12 +15,12 @@
 //! Each transformer returns a new DataFrame with transformed features.
 //! Errors are returned as [`FeatureFactoryError`], and results are wrapped in [`FeatureFactoryResult`].
 
-use crate::exceptions::{FeatureFactoryError, FeatureFactoryResult};
+use crate::core::errors::{FeatureFactoryError, FeatureFactoryResult};
 use crate::impl_transformer;
 use datafusion::dataframe::DataFrame;
 use datafusion::functions_aggregate::approx_percentile_cont::approx_percentile_cont;
 use datafusion::scalar::ScalarValue;
-use datafusion_expr::{col, lit, Expr};
+use datafusion_expr::{Expr, col, lit};
 use datafusion_functions::math;
 use std::ops::{Add, Div, Neg, Sub};
 
@@ -50,7 +50,18 @@ async fn compute_min(df: &DataFrame, col_name: &str) -> FeatureFactoryResult<f64
         .clone()
         .aggregate(
             vec![],
-            vec![approx_percentile_cont(col(col_name), lit(0.0), None).alias("min")],
+            vec![
+                approx_percentile_cont(
+                    datafusion::logical_expr::expr::Sort {
+                        expr: col(col_name),
+                        asc: true,
+                        nulls_first: false,
+                    },
+                    lit(0.0),
+                    None,
+                )
+                .alias("min"),
+            ],
         )
         .map_err(FeatureFactoryError::from)?;
     let batches = min_df.collect().await.map_err(FeatureFactoryError::from)?;
@@ -80,7 +91,18 @@ async fn compute_max(df: &DataFrame, col_name: &str) -> FeatureFactoryResult<f64
         .clone()
         .aggregate(
             vec![],
-            vec![approx_percentile_cont(col(col_name), lit(1.0), None).alias("max")],
+            vec![
+                approx_percentile_cont(
+                    datafusion::logical_expr::expr::Sort {
+                        expr: col(col_name),
+                        asc: true,
+                        nulls_first: false,
+                    },
+                    lit(1.0),
+                    None,
+                )
+                .alias("max"),
+            ],
         )
         .map_err(FeatureFactoryError::from)?;
     let batches = max_df.collect().await.map_err(FeatureFactoryError::from)?;
@@ -106,6 +128,7 @@ async fn compute_max(df: &DataFrame, col_name: &str) -> FeatureFactoryResult<f64
 
 /// Applies natural logarithm transformation to the values in the columns.
 /// Needs all values to be positive.
+#[derive(Clone)]
 pub struct LogTransformer {
     pub columns: Vec<String>,
 }
@@ -169,6 +192,7 @@ impl LogTransformer {
 
 /// Applies logarithmic transformation with a constant to the values in the columns.
 /// Transformation: log(x + constant). Requires (min + constant) > 0.
+#[derive(Clone)]
 pub struct LogCpTransformer {
     pub columns: Vec<String>,
     pub constant: f64,
@@ -200,7 +224,10 @@ impl LogCpTransformer {
             if min_val + self.constant <= 0.0 {
                 return Err(FeatureFactoryError::InvalidParameter(format!(
                     "LogCpTransformer requires (min + constant) > 0 for column '{}', but min {} + constant {} = {}",
-                    col_name, min_val, self.constant, min_val + self.constant
+                    col_name,
+                    min_val,
+                    self.constant,
+                    min_val + self.constant
                 )));
             }
         }
@@ -232,6 +259,7 @@ impl LogCpTransformer {
 
 /// Applies reciprocal transformation (1/x) to the values in the columns.
 /// Requires that no value is zero.
+#[derive(Clone)]
 pub struct ReciprocalTransformer {
     pub columns: Vec<String>,
 }
@@ -294,6 +322,7 @@ impl ReciprocalTransformer {
 }
 
 /// Applies power transformation to the values in the columns (x^power).
+#[derive(Clone)]
 pub struct PowerTransformer {
     pub columns: Vec<String>,
     pub power: f64,
@@ -345,6 +374,7 @@ impl PowerTransformer {
 /// Applies Box–Cox transformation to the values in the columns.
 /// Transformation: (x^lambda - 1) / lambda for lambda != 0, else ln(x)
 /// Needs all values to be positive.
+#[derive(Clone)]
 pub struct BoxCoxTransformer {
     pub columns: Vec<String>,
     pub lambda: f64,
@@ -416,6 +446,7 @@ impl BoxCoxTransformer {
 /// Applies Yeo–Johnson transformation to the values in the columns.
 /// For x >= 0: ( (x + 1)^lambda - 1) / lambda for lambda != 0, else ln(x + 1)
 /// and for x < 0: -((1 - x)^(2 - lambda) - 1) / (2 - lambda) for lambda != 2, else -ln(1 - x)
+#[derive(Clone)]
 pub struct YeoJohnsonTransformer {
     pub columns: Vec<String>,
     pub lambda: f64,
@@ -489,6 +520,7 @@ impl YeoJohnsonTransformer {
 
 /// Applies an arcsine transformation defined as asin(sqrt(x)) to the values in the columns.
 /// Needs all values to be between 0 and 1.
+#[derive(Clone)]
 pub struct ArcsinTransformer {
     pub columns: Vec<String>,
 }

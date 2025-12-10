@@ -15,13 +15,10 @@ pub async fn load_data(path: &str) -> Result<DataFrame, datafusion::error::DataF
     // Detect file type and read accordingly
     let df = if Path::new(path)
         .extension()
-        .map_or(false, |ext| ext == "parquet")
+        .is_some_and(|ext| ext == "parquet")
     {
         ctx.read_parquet(path, Default::default()).await?
-    } else if Path::new(path)
-        .extension()
-        .map_or(false, |ext| ext == "csv")
-    {
+    } else if Path::new(path).extension().is_some_and(|ext| ext == "csv") {
         ctx.read_csv(path, CsvReadOptions::new()).await?
     } else {
         return Err(datafusion::error::DataFusionError::Execution(

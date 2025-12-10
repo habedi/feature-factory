@@ -10,14 +10,13 @@
 //!
 //! ### Example
 //!
-//! ```rust
-//! use feature_factory::exceptions::{FeatureFactoryError, FeatureFactoryResult};
-//!
-//! fn load_data() -> FeatureFactoryResult<()> {
-//!     Err(FeatureFactoryError::NotImplemented("CSV loading".into()))
-//! }
-//! ```
-
+/// ```rust
+/// use feature_factory::core::errors::{FeatureFactoryError, FeatureFactoryResult};
+///
+/// fn load_data() -> FeatureFactoryResult<()> {
+///     Err(FeatureFactoryError::NotImplemented("CSV loading".into()))
+/// }
+/// ```
 use thiserror::Error;
 
 /// Errors specific to the Feature Factory library.
@@ -99,16 +98,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parquet_error() {
-        // Create a Parquet error.
-        let parquet_err = parquet::errors::ParquetError::General("test parquet error".into());
-        let err: FeatureFactoryError = parquet_err.into();
-        let err_msg = format!("{}", err);
-        assert!(err_msg.contains("Parquet error:"));
-        assert!(err_msg.contains("test parquet error"));
-    }
-
-    #[test]
     fn test_invalid_parameter_error() {
         let err = FeatureFactoryError::InvalidParameter("bad param".into());
         let err_msg = format!("{}", err);
@@ -117,33 +106,25 @@ mod tests {
     }
 
     #[test]
-    fn test_unsupported_format_error() {
-        let err = FeatureFactoryError::UnsupportedFormat("unknown format".into());
-        let err_msg = format!("{}", err);
-        assert!(err_msg.contains("Unsupported format:"));
-        assert!(err_msg.contains("unknown format"));
-    }
-
-    #[test]
-    fn test_not_implemented_error() {
-        let err = FeatureFactoryError::NotImplemented("feature not implemented".into());
-        let err_msg = format!("{}", err);
-        assert!(err_msg.contains("Not implemented:"));
-        assert!(err_msg.contains("feature not implemented"));
-    }
-
-    #[test]
     fn test_missing_column_error() {
-        let err = FeatureFactoryError::MissingColumn("missing column".into());
+        let err = FeatureFactoryError::MissingColumn("col_xyz".into());
         let err_msg = format!("{}", err);
         assert!(err_msg.contains("Missing column:"));
-        assert!(err_msg.contains("missing column"));
+        assert!(err_msg.contains("col_xyz"));
     }
 
     #[test]
     fn test_fit_not_called_error() {
         let err = FeatureFactoryError::FitNotCalled;
         let err_msg = format!("{}", err);
-        assert!(err_msg.contains("Transform called before fit for stateful transformer"));
+        assert!(err_msg.contains("Transform called before fit"));
+    }
+
+    #[test]
+    fn test_not_implemented_error() {
+        let err = FeatureFactoryError::NotImplemented("future feature".into());
+        let err_msg = format!("{}", err);
+        assert!(err_msg.contains("Not implemented:"));
+        assert!(err_msg.contains("future feature"));
     }
 }

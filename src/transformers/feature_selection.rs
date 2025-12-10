@@ -24,20 +24,17 @@
 //! Each transformer returns a new DataFrame with the selected features.
 //! Errors are returned as [`FeatureFactoryError`], and results are wrapped in [`FeatureFactoryResult`].
 
-use crate::exceptions::{FeatureFactoryError, FeatureFactoryResult};
+use crate::core::errors::{FeatureFactoryError, FeatureFactoryResult};
+use crate::core::types::is_numeric;
 use crate::impl_transformer;
-use datafusion::arrow::array::{as_primitive_array, Array, StringArray};
-use datafusion::arrow::datatypes::{DataType, Float64Type};
+use datafusion::arrow::array::{Array, StringArray, as_primitive_array};
+use datafusion::arrow::datatypes::{DataType, Float64Type, UInt64Type};
 use datafusion::dataframe::DataFrame;
-use datafusion::logical_expr::{col, Expr};
+use datafusion::functions_aggregate::expr_fn::{corr, count_distinct, var_pop};
+use datafusion::logical_expr::{Expr, col};
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-
-/// Helper function that checks if a DataFusion data type is numeric (only handling Float64 here).
-fn is_numeric(dt: &DataType) -> bool {
-    matches!(dt, DataType::Float64)
-}
 
 /// Removes the specified columns from the DataFrame.
 pub struct DropFeatures {
@@ -101,53 +98,36 @@ impl DropConstantFeatures {
 
     pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
         let schema = df.schema();
-        let batches = df.clone().collect().await?;
-        if batches.is_empty() {
-            return Err(FeatureFactoryError::InvalidParameter(
-                "DataFrame is empty.".to_string(),
-            ));
-        }
-        let batch = &batches[0];
-
         for field in schema.fields() {
             let name = field.name();
             if is_numeric(field.data_type()) {
-                let array =
-                    as_primitive_array::<Float64Type>(batch.column_by_name(name).ok_or_else(
-                        || FeatureFactoryError::MissingColumn(format!("Column {} not found", name)),
-                    )?);
-                let n = array.len() as f64;
-                let sum: f64 = array.iter().flatten().par_bridge().sum();
-                let mean = sum / n;
-                let sum_sq: f64 = array.iter().flatten().par_bridge().map(|v| v * v).sum();
-                let variance = sum_sq / n - mean * mean;
-                if variance < self.numeric_threshold {
-                    self.drop_columns.insert(name.to_string());
-                }
-            } else {
-                let string_array = batch
-                    .column_by_name(name)
-                    .ok_or_else(|| {
-                        FeatureFactoryError::MissingColumn(format!("Column {} not found", name))
-                    })?
-                    .as_any()
-                    .downcast_ref::<StringArray>()
-                    .ok_or_else(|| {
-                        FeatureFactoryError::DataFusionError(
-                            datafusion::error::DataFusionError::Plan(format!(
-                                "Expected Utf8 array for column {}",
-                                name
-                            )),
-                        )
-                    })?;
-                let mut distinct = HashSet::new();
-                for i in 0..string_array.len() {
-                    if !string_array.is_null(i) {
-                        distinct.insert(string_array.value(i).to_string());
+                let variance_df = df
+                    .clone()
+                    .aggregate(vec![], vec![var_pop(col(name)).alias("variance")])?;
+                let batches = variance_df.collect().await?;
+                if let Some(batch) = batches.first() {
+                    let variance_array = as_primitive_array::<Float64Type>(batch.column(0));
+                    if !variance_array.is_empty() && !variance_array.is_null(0) {
+                        let variance = variance_array.value(0);
+                        if variance < self.numeric_threshold {
+                            self.drop_columns.insert(name.to_string());
+                        }
                     }
                 }
-                if distinct.len() <= self.categorical_threshold {
-                    self.drop_columns.insert(name.to_string());
+            } else if *field.data_type() == DataType::Utf8 {
+                let distinct_count_df = df.clone().aggregate(
+                    vec![],
+                    vec![count_distinct(col(name)).alias("distinct_count")],
+                )?;
+                let batches = distinct_count_df.collect().await?;
+                if let Some(batch) = batches.first() {
+                    let count_array = as_primitive_array::<UInt64Type>(batch.column(0));
+                    if !count_array.is_empty() && !count_array.is_null(0) {
+                        let distinct_count = count_array.value(0) as usize;
+                        if distinct_count <= self.categorical_threshold {
+                            self.drop_columns.insert(name.to_string());
+                        }
+                    }
                 }
             }
         }
@@ -217,7 +197,9 @@ impl DropDuplicateFeatures {
         let mut seen: Vec<(String, Arc<dyn Array>)> = Vec::new();
         for field in schema.fields() {
             let name = field.name().clone();
-            let array = batch.column_by_name(&name).unwrap();
+            let array = batch.column_by_name(&name).ok_or_else(|| {
+                FeatureFactoryError::MissingColumn(format!("Column {} missing", name))
+            })?;
             let mut is_duplicate = false;
             for (_seen_name, seen_array) in &seen {
                 if array == seen_array {
@@ -280,54 +262,52 @@ impl DropCorrelatedFeatures {
     }
 
     pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
-        let batches = df.clone().collect().await?;
-        if batches.is_empty() {
-            return Err(FeatureFactoryError::InvalidParameter(
-                "Empty DataFrame".to_string(),
-            ));
-        }
-        let batch = &batches[0];
         let schema = df.schema();
         let numeric_fields: Vec<_> = schema
             .fields()
             .iter()
             .filter(|f| is_numeric(f.data_type()))
+            .map(|f| f.name().clone())
             .collect();
-        let mut data: HashMap<String, Vec<f64>> = HashMap::new();
-        for field in &numeric_fields {
-            let name = field.name();
-            let array = as_primitive_array::<Float64Type>(batch.column_by_name(name).unwrap());
-            let vec: Vec<f64> = array.iter().flatten().collect();
-            data.insert(name.to_string(), vec);
+
+        let mut variances = HashMap::new();
+        for name in &numeric_fields {
+            let variance_df = df
+                .clone()
+                .aggregate(vec![], vec![var_pop(col(name)).alias("variance")])?;
+            let batches = variance_df.collect().await?;
+            if let Some(batch) = batches.first() {
+                let variance_array = as_primitive_array::<Float64Type>(batch.column(0));
+                if !variance_array.is_empty() && !variance_array.is_null(0) {
+                    variances.insert(name.clone(), variance_array.value(0));
+                }
+            }
         }
+
         let mut to_drop = HashSet::new();
-        let names: Vec<_> = data.keys().cloned().collect();
-        for i in 0..names.len() {
-            for j in (i + 1)..names.len() {
-                let x = &data[&names[i]];
-                let y = &data[&names[j]];
-                if x.len() != y.len() || x.is_empty() {
-                    continue;
-                }
-                let n_f = x.len() as f64;
-                let mean_x = x.iter().sum::<f64>() / n_f;
-                let mean_y = y.iter().sum::<f64>() / n_f;
-                let cov: f64 = x
-                    .iter()
-                    .zip(y.iter())
-                    .map(|(a, b)| (a - mean_x) * (b - mean_y))
-                    .sum();
-                let var_x: f64 = x.iter().map(|a| (a - mean_x).powi(2)).sum();
-                let var_y: f64 = y.iter().map(|b| (b - mean_y).powi(2)).sum();
-                if var_x == 0.0 || var_y == 0.0 {
-                    continue;
-                }
-                let corr = cov / ((var_x).sqrt() * (var_y).sqrt());
-                if corr.abs() > self.threshold {
-                    if var_x < var_y {
-                        to_drop.insert(names[i].clone());
-                    } else {
-                        to_drop.insert(names[j].clone());
+        for i in 0..numeric_fields.len() {
+            for j in (i + 1)..numeric_fields.len() {
+                let name_i = &numeric_fields[i];
+                let name_j = &numeric_fields[j];
+
+                let correlation_df = df
+                    .clone()
+                    .aggregate(vec![], vec![corr(col(name_i), col(name_j)).alias("corr")])?;
+
+                let batches = correlation_df.collect().await?;
+                if let Some(batch) = batches.first() {
+                    let corr_array = as_primitive_array::<Float64Type>(batch.column(0));
+                    if !corr_array.is_empty() && !corr_array.is_null(0) {
+                        let correlation = corr_array.value(0);
+                        if correlation.abs() > self.threshold {
+                            let var_i = variances.get(name_i).unwrap_or(&0.0);
+                            let var_j = variances.get(name_j).unwrap_or(&0.0);
+                            if var_i < var_j {
+                                to_drop.insert(name_i.clone());
+                            } else {
+                                to_drop.insert(name_j.clone());
+                            }
+                        }
                     }
                 }
             }
@@ -399,7 +379,10 @@ impl SmartCorrelatedSelection {
         let mut stats: Vec<(String, f64, Vec<f64>)> = Vec::new();
         for field in &numeric_fields {
             let name = field.name();
-            let array = as_primitive_array::<Float64Type>(batch.column_by_name(name).unwrap());
+            let array =
+                as_primitive_array::<Float64Type>(batch.column_by_name(name).ok_or_else(|| {
+                    FeatureFactoryError::MissingColumn(format!("Column {} missing", name))
+                })?);
             let vec: Vec<f64> = array.iter().flatten().collect();
             let n = vec.len() as f64;
             let mean = vec.iter().sum::<f64>() / n;
@@ -546,7 +529,9 @@ impl DropHighPSIFeatures {
                 let ref_vals: Vec<f64> = ref_array.iter().flatten().par_bridge().collect();
                 let curr_vals: Vec<f64> = curr_array.iter().flatten().par_bridge().collect();
                 let mut sorted = ref_vals.clone();
-                sorted.par_sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+                sorted.par_sort_unstable_by(|a, b| {
+                    a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+                });
                 let mut bins = Vec::new();
                 for i in 0..11 {
                     let idx = ((sorted.len() - 1) as f64 * i as f64 / 10.0).round() as usize;
@@ -641,7 +626,9 @@ impl SelectByInformationValue {
                 if vals.is_empty() {
                     continue;
                 }
-                vals.par_sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+                vals.par_sort_unstable_by(|a, b| {
+                    a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+                });
                 let mut bins = Vec::new();
                 for i in 0..11 {
                     let idx = ((vals.len() - 1) as f64 * i as f64 / 10.0).round() as usize;
@@ -755,46 +742,29 @@ impl SelectBySingleFeaturePerformance {
     }
 
     pub async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()> {
-        let batches = df.clone().collect().await?;
-        if batches.is_empty() {
-            return Err(FeatureFactoryError::InvalidParameter(
-                "Empty DataFrame".to_string(),
-            ));
-        }
-        let batch = &batches[0];
-        let target_array =
-            as_primitive_array::<Float64Type>(batch.column_by_name(&self.target).ok_or_else(
-                || FeatureFactoryError::MissingColumn(format!("Target {} missing", self.target)),
-            )?);
-        // Use sequential iteration to preserve order.
-        let target_vals: Vec<f64> = target_array.iter().flatten().collect();
         let mut selected = HashSet::new();
-        for field in df.schema().fields() {
+        let schema = df.schema();
+        let target_col = col(&self.target);
+
+        for field in schema.fields() {
             let name = field.name();
             if name == &self.target || !is_numeric(field.data_type()) {
                 continue;
             }
-            let array = as_primitive_array::<Float64Type>(batch.column_by_name(name).unwrap());
-            let x: Vec<f64> = array.iter().flatten().collect();
-            if x.len() != target_vals.len() || x.is_empty() {
-                continue;
-            }
-            let n = x.len() as f64;
-            let mean_x = x.iter().sum::<f64>() / n;
-            let mean_y = target_vals.iter().sum::<f64>() / n;
-            let cov: f64 = x
-                .iter()
-                .zip(target_vals.iter())
-                .map(|(a, b)| (a - mean_x) * (b - mean_y))
-                .sum();
-            let var_x: f64 = x.iter().map(|a| (a - mean_x).powi(2)).sum();
-            let var_y: f64 = target_vals.iter().map(|b| (b - mean_y).powi(2)).sum();
-            if var_x == 0.0 || var_y == 0.0 {
-                continue;
-            }
-            let corr = cov / (var_x.sqrt() * var_y.sqrt());
-            if corr.abs() >= self.correlation_threshold {
-                selected.insert(name.to_string());
+
+            let correlation_df = df.clone().aggregate(
+                vec![],
+                vec![corr(col(name), target_col.clone()).alias("corr")],
+            )?;
+            let batches = correlation_df.collect().await?;
+            if let Some(batch) = batches.first() {
+                let corr_array = as_primitive_array::<Float64Type>(batch.column(0));
+                if !corr_array.is_empty() && !corr_array.is_null(0) {
+                    let correlation = corr_array.value(0);
+                    if correlation.abs() >= self.correlation_threshold {
+                        selected.insert(name.to_string());
+                    }
+                }
             }
         }
         self.selected_features = selected;
@@ -862,12 +832,15 @@ impl SelectByTargetMeanPerformance {
             if name == &self.target || !is_numeric(field.data_type()) {
                 continue;
             }
-            let array = as_primitive_array::<Float64Type>(batch.column_by_name(name).unwrap());
+            let array =
+                as_primitive_array::<Float64Type>(batch.column_by_name(name).ok_or_else(|| {
+                    FeatureFactoryError::MissingColumn(format!("Column {} missing", name))
+                })?);
             let mut vals: Vec<f64> = array.iter().flatten().collect();
             if vals.is_empty() {
                 continue;
             }
-            vals.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            vals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
             let median = vals[vals.len() / 2];
             let mut group1 = Vec::new();
             let mut group2 = Vec::new();
@@ -962,7 +935,10 @@ impl MRMR {
             if name == &self.target || !is_numeric(field.data_type()) {
                 continue;
             }
-            let array = as_primitive_array::<Float64Type>(batch.column_by_name(name).unwrap());
+            let array =
+                as_primitive_array::<Float64Type>(batch.column_by_name(name).ok_or_else(|| {
+                    FeatureFactoryError::MissingColumn(format!("Column {} missing", name))
+                })?);
             let x: Vec<f64> = array.iter().flatten().collect();
             if x.len() != target_vals.len() || x.is_empty() {
                 continue;
@@ -986,14 +962,18 @@ impl MRMR {
             }
         }
         let mut selected = Vec::<String>::new();
-        candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         for (feat, _) in candidates {
             let mut redundant = false;
             for sel in &selected {
                 let array_feat =
-                    as_primitive_array::<Float64Type>(batch.column_by_name(&feat).unwrap());
+                    as_primitive_array::<Float64Type>(batch.column_by_name(&feat).ok_or_else(
+                        || FeatureFactoryError::MissingColumn(format!("Column {} missing", feat)),
+                    )?);
                 let array_sel =
-                    as_primitive_array::<Float64Type>(batch.column_by_name(sel).unwrap());
+                    as_primitive_array::<Float64Type>(batch.column_by_name(sel).ok_or_else(
+                        || FeatureFactoryError::MissingColumn(format!("Column {} missing", sel)),
+                    )?);
                 let x: Vec<f64> = array_feat.iter().flatten().collect();
                 let y: Vec<f64> = array_sel.iter().flatten().collect();
                 if x.len() != y.len() || x.is_empty() {

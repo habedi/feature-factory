@@ -5,10 +5,12 @@ use arrow::datatypes::{DataType, Field, Schema};
 use arrow::record_batch::RecordBatch;
 use datafusion::datasource::MemTable;
 use datafusion::prelude::{DataFrame, SessionContext};
-use feature_factory::exceptions::FeatureFactoryResult;
+use feature_factory::FeatureFactoryResult;
 use feature_factory::make_pipeline;
+
 // Import the pipeline! macro.
-use feature_factory::pipeline::{Pipeline, Transformer};
+use feature_factory::Pipeline;
+use feature_factory::Transformer;
 use feature_factory::transformers::imputation::AddMissingIndicator;
 
 // Import the numerical transformers.

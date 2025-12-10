@@ -5,51 +5,19 @@
 //!
 //! ### Overview
 //!
-//! - The [`Transformer`] trait defines a common interface for implementing data transformation steps,
+//! - The [`crate::core::traits::Transformer`] trait defines a common interface for implementing data transformation steps,
 //!   supporting both stateful (requiring fitting) and stateless transformations.
 //! - The [`Pipeline`] struct enables chaining multiple transformers into a cohesive data transformation pipeline,
 //!   supporting both fitting and transforming operations.
 //! - Macros [`crate::impl_transformer`] and [`crate::make_pipeline`] simplify the creation and implementation
 //!   of transformers and pipelines.
 
-use crate::exceptions::{FeatureFactoryError, FeatureFactoryResult};
-use async_trait::async_trait;
+use crate::core::errors::{FeatureFactoryError, FeatureFactoryResult};
+use crate::core::traits::Transformer;
 use datafusion::prelude::*;
 use std::time::Instant;
 
-/// Trait for components used in the data transformation pipeline.
-///
-/// Every transformer must provide a `fit` method (which may collect data to compute parameters)
-/// and a `transform` method (which updates the DataFrame’s logical plan without triggering execution).
-#[async_trait]
-pub trait Transformer {
-    /// Fit the transformer given a DataFrame.
-    ///
-    /// # Arguments
-    ///
-    /// * `df` - The input DataFrame.
-    ///
-    /// # Returns
-    ///
-    /// * `FeatureFactoryResult<()>` - Returns Ok if successful, or an error otherwise.
-    async fn fit(&mut self, df: &DataFrame) -> FeatureFactoryResult<()>;
-
-    /// Transform the input DataFrame, returning a new DataFrame with the transformation applied.
-    ///
-    /// # Arguments
-    ///
-    /// * `df` - The input DataFrame.
-    ///
-    /// # Returns
-    ///
-    /// * `FeatureFactoryResult<DataFrame>` - The transformed DataFrame or an error if transformation fails.
-    fn transform(&self, df: DataFrame) -> FeatureFactoryResult<DataFrame>;
-
-    /// Returns true if the transformer is stateful (i.e. requires a call to fit before transform can be called).
-    fn is_stateful(&self) -> bool;
-}
-
-/// Macro to implement the [`Transformer`] trait for Feature Factory transformers.
+/// Macro to implement the [`crate::core::traits::Transformer`] trait for Feature Factory transformers.
 ///
 /// The type must already have inherent methods:
 /// - `async fn fit(&mut self, &DataFrame) -> FeatureFactoryResult<()>`
@@ -59,7 +27,7 @@ pub trait Transformer {
 /// # Example
 ///
 /// ```rust,no_run
-/// use feature_factory::exceptions::FeatureFactoryResult;
+/// use feature_factory::FeatureFactoryResult;
 /// use datafusion::prelude::DataFrame;
 /// // Import the macro.
 /// use feature_factory::impl_transformer;
@@ -91,17 +59,17 @@ pub trait Transformer {
 macro_rules! impl_transformer {
     ($ty:ty) => {
         #[async_trait::async_trait]
-        impl $crate::pipeline::Transformer for $ty {
+        impl $crate::core::traits::Transformer for $ty {
             async fn fit(
                 &mut self,
                 df: &datafusion::prelude::DataFrame,
-            ) -> $crate::exceptions::FeatureFactoryResult<()> {
+            ) -> $crate::core::errors::FeatureFactoryResult<()> {
                 <$ty>::fit(self, df).await
             }
             fn transform(
                 &self,
                 df: datafusion::prelude::DataFrame,
-            ) -> $crate::exceptions::FeatureFactoryResult<datafusion::prelude::DataFrame> {
+            ) -> $crate::core::errors::FeatureFactoryResult<datafusion::prelude::DataFrame> {
                 <$ty>::transform(self, df)
             }
             fn is_stateful(&self) -> bool {
@@ -113,7 +81,7 @@ macro_rules! impl_transformer {
 
 /// A pipeline that chains a sequence of transformers.
 ///
-/// Each transformer’s output (a new logical plan) is passed as input to the next transformer.
+/// Each transformer's output (a new logical plan) is passed as input to the next transformer.
 /// This design allows lazy chaining of transformations until a terminal action (like `collect`) is called.
 pub struct Pipeline {
     steps: Vec<(String, Box<dyn Transformer + Send + Sync>)>,
@@ -129,6 +97,16 @@ impl Pipeline {
     /// * `verbose` - If true, prints timing information.
     pub fn new(steps: Vec<(String, Box<dyn Transformer + Send + Sync>)>, verbose: bool) -> Self {
         Self { steps, verbose }
+    }
+
+    /// Returns the number of steps in the pipeline.
+    pub fn len(&self) -> usize {
+        self.steps.len()
+    }
+
+    /// Returns true if the pipeline has no steps.
+    pub fn is_empty(&self) -> bool {
+        self.steps.is_empty()
     }
 
     /// Fits each transformer (sequentially) and updates the logical plan.
@@ -208,12 +186,74 @@ impl Pipeline {
 macro_rules! make_pipeline {
     ($verbose:expr, $(($name:expr, $transformer:expr)),+ $(,)?) => {
         {
-            let steps: Vec<(String, Box<dyn $crate::pipeline::Transformer + Send + Sync>)> = vec![
+            let steps: Vec<(String, Box<dyn $crate::core::traits::Transformer + Send + Sync>)> = vec![
                 $(
                     ($name.to_string(), Box::new($transformer)),
                 )+
             ];
-            $crate::pipeline::Pipeline::new(steps, $verbose)
+            $crate::core::pipeline::Pipeline::new(steps, $verbose)
         }
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::errors::FeatureFactoryError;
+
+    struct DummyTransformer {
+        fitted: bool,
+    }
+
+    #[async_trait::async_trait]
+    impl Transformer for DummyTransformer {
+        async fn fit(&mut self, _df: &DataFrame) -> FeatureFactoryResult<()> {
+            self.fitted = true;
+            Ok(())
+        }
+
+        fn transform(&self, df: DataFrame) -> FeatureFactoryResult<DataFrame> {
+            if !self.fitted {
+                return Err(FeatureFactoryError::FitNotCalled);
+            }
+            Ok(df)
+        }
+
+        fn is_stateful(&self) -> bool {
+            true
+        }
+    }
+
+    #[tokio::test]
+    async fn test_pipeline_empty() {
+        let ctx = SessionContext::new();
+        let df = ctx.sql("SELECT 1 as a").await.unwrap();
+
+        let mut pipeline = Pipeline::new(vec![], false);
+        assert!(pipeline.is_empty());
+        assert_eq!(pipeline.len(), 0);
+        assert!(pipeline.fit(&df).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_pipeline_single_step() {
+        let ctx = SessionContext::new();
+        let df = ctx.sql("SELECT 1 as a").await.unwrap();
+
+        let transformer = DummyTransformer { fitted: false };
+        let mut pipeline = Pipeline::new(vec![("step1".to_string(), Box::new(transformer))], false);
+
+        assert!(!pipeline.is_empty());
+        assert_eq!(pipeline.len(), 1);
+
+        let result = pipeline.fit(&df).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_pipeline_len_and_is_empty() {
+        let pipeline = Pipeline::new(vec![], false);
+        assert!(pipeline.is_empty());
+        assert_eq!(pipeline.len(), 0);
+    }
 }

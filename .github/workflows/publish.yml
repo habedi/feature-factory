@@ -1,10 +1,13 @@
 name: Publish to Crates.io
 
 on:
-  workflow_dispatch: { } # Allow manual execution
+  workflow_dispatch:
   push:
     tags:
-      - 'v*' # Trigger on version tags
+      - 'v*'
+
+permissions:
+  contents: read
 
 jobs:
 
@@ -14,7 +17,6 @@ jobs:
 
   publish:
     runs-on: ubuntu-latest
-
     # Try to publish only if the tests pass
     needs: call_tests
     if: success()
@@ -23,16 +25,16 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up Rust
+      - name: Set Up Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: stable
+          toolchain: '1.85.1'
 
       - name: Publish to Crates.io
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y make
+          sudo apt-get install -y clang curl pkg-config libssl-dev make
+          make install-deps
           cargo publish --token $CARGO_REGISTRY_TOKEN
-        continue-on-error: false

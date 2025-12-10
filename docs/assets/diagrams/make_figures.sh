@@ -7,6 +7,6 @@
 ASSET_DIR=${1:-"."}
 
 # Make figures from .dot files
-for f in ${ASSET_DIR}/*.dot; do
+for f in "${ASSET_DIR}"/*.dot; do
     dot -Tsvg "$f" -o "${f%.dot}.svg"
 done

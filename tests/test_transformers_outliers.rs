@@ -5,7 +5,7 @@ use datafusion::datasource::memory::MemTable;
 use datafusion::prelude::*;
 use std::sync::Arc;
 
-use feature_factory::exceptions::FeatureFactoryResult;
+use feature_factory::FeatureFactoryResult;
 use feature_factory::transformers::outliers::{ArbitraryOutlierCapper, OutlierTrimmer, Winsorizer};
 
 /// Helper function to create a DataFrame with a single Float64 column "value" using the provided values.

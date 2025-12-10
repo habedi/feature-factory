@@ -14,28 +14,17 @@
 //! Each transformer returns a new DataFrame with missing values handled accordingly.
 //! Errors are returned as [`FeatureFactoryError`], and results are wrapped in [`FeatureFactoryResult`].
 
-use crate::exceptions::{FeatureFactoryError, FeatureFactoryResult};
+use crate::core::errors::{FeatureFactoryError, FeatureFactoryResult};
+use crate::core::types::validate_columns;
 use crate::impl_transformer;
 use datafusion::dataframe::DataFrame;
 use datafusion::functions_aggregate::expr_fn::{approx_percentile_cont, avg, count};
-use datafusion::logical_expr::{col, lit, not, Case as DFCase, Expr};
+use datafusion::logical_expr::{Case as DFCase, Expr, col, lit, not};
 use datafusion::scalar::ScalarValue;
 use std::collections::HashMap;
 
-/// Validates that every column in `target_cols` exists in the DataFrame.
-/// Returns an error if any target column is missing.
-fn validate_columns(df: &DataFrame, target_cols: &[String]) -> FeatureFactoryResult<()> {
-    let schema = df.schema();
-    for col_name in target_cols {
-        if schema.field_with_name(None, col_name).is_err() {
-            return Err(FeatureFactoryError::MissingColumn(format!(
-                "Column '{}' not found in DataFrame",
-                col_name
-            )));
-        }
-    }
-    Ok(())
-}
+#[cfg(feature = "pyo3")]
+use pyo3::prelude::*;
 
 /// Constructs an expression equivalent to SQL COALESCE(col, fallback).
 /// This is implemented as a CASE expression: if `col` is not null then return it, otherwise return `fallback`.
@@ -79,6 +68,7 @@ where
 }
 
 /// Replaces missing values with the mean ~~(or median)~~ value for numeric columns.
+#[derive(Clone)]
 pub struct MeanMedianImputer {
     pub columns: Vec<String>,
     pub strategy: ImputeStrategy,
@@ -86,6 +76,7 @@ pub struct MeanMedianImputer {
     fitted: bool,
 }
 
+#[cfg_attr(feature = "pyo3", pyclass)]
 #[derive(Debug, Clone, Copy)]
 pub enum ImputeStrategy {
     Mean,
@@ -160,6 +151,7 @@ impl MeanMedianImputer {
 }
 
 /// Replaces missing values with the given number.
+#[derive(Clone)]
 pub struct ArbitraryNumberImputer {
     pub columns: Vec<String>,
     pub number: f64,
@@ -194,6 +186,7 @@ impl ArbitraryNumberImputer {
 }
 
 /// Replaces missing values with a percentile value computed from the data.
+#[derive(Clone)]
 pub struct EndTailImputer {
     pub columns: Vec<String>,
     pub percentile: f64,
@@ -226,8 +219,16 @@ impl EndTailImputer {
                 .aggregate(
                     vec![],
                     vec![
-                        approx_percentile_cont(col(col_name), lit(self.percentile), None)
-                            .alias("perc"),
+                        approx_percentile_cont(
+                            datafusion::logical_expr::expr::Sort {
+                                expr: col(col_name),
+                                asc: true,
+                                nulls_first: false,
+                            },
+                            lit(self.percentile),
+                            None,
+                        )
+                        .alias("perc"),
                     ],
                 )
                 .map_err(FeatureFactoryError::from)?;
@@ -270,6 +271,7 @@ impl EndTailImputer {
 }
 
 /// Replaces missing values with the mode (or a provided default) for categorical columns.
+#[derive(Clone)]
 pub struct CategoricalImputer {
     pub columns: Vec<String>,
     pub default: Option<String>,
@@ -348,6 +350,7 @@ impl CategoricalImputer {
 }
 
 /// Adds additional Boolean indicator columns for missing values.
+#[derive(Clone)]
 pub struct AddMissingIndicator {
     pub columns: Vec<String>,
     pub suffix: String,
@@ -391,6 +394,7 @@ impl AddMissingIndicator {
 }
 
 /// Removes rows that contain a missing value in the given columns.
+#[derive(Clone)]
 pub struct DropMissingData {
     /// Optional list of column names to check for missing values.
     /// If None, all columns in the DataFrame are checked.
@@ -428,12 +432,17 @@ impl DropMissingData {
             .iter()
             .map(|col_name| col(col_name).is_not_null())
             .collect();
-        let combined = predicates
-            .into_iter()
-            .reduce(|acc, expr| acc.and(expr))
-            .unwrap();
+        if predicates.is_empty() {
+            return Ok(df);
+        }
+        let combined = if let Some(first) = predicates.into_iter().reduce(|acc, expr| acc.and(expr))
+        {
+            first
+        } else {
+            return Ok(df);
+        };
         df.filter(combined)
-            .map_err(crate::exceptions::FeatureFactoryError::from)
+            .map_err(crate::core::errors::FeatureFactoryError::from)
     }
 
     // This transformer is stateless.

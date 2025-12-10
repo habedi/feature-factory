@@ -1,27 +1,28 @@
 [package]
 name = "feature-factory"
-version = "0.1.1-alpha"
-description = "A high-performance feature engineering library for Rust powered by Apache DataFusion"
-repository = "https://github.com/habedi/feature-factory"
+version = "0.1.1-alpha.2"
+description = "A feature engineering library for Rust"
+repository = "https://github.com/CogitatorTech/feature-factory"
 license = "MIT OR Apache-2.0"
 readme = "README.md"
 keywords = ["feature-engineering", "machine-learning", "data-science", "feature-selection", "feature-extraction"]
 authors = ["Hassan Abedi <hassan.abedi.t@gmail.com>"]
-homepage = "https://github.com/habedi/feature-factory"
+homepage = "https://github.com/CogitatorTech/feature-factory"
 documentation = "https://docs.rs/feature-factory"
-categories = ["development-tools", "algorithms", "data-structures"]
-edition = "2021"
-rust-version = "1.83"
+categories = ["algorithms", "data-structures"]
+edition = "2024"
+rust-version = "1.85"
 
 resolver = "2"
 
 include = [
-    "docs/**/*",
+    "assets/**/*",
     "src/**/*",
     "Cargo.toml",
     "README.md",
     "LICENSE-MIT",
-    "LICENSE-APACHE"
+    "LICENSE-APACHE",
+    "logo.png"
 ]
 
 [lib]
@@ -29,27 +30,30 @@ name = "feature_factory"
 path = "src/lib.rs"
 
 [features]
-default = []  # No features enabled by default
+default = []
 binaries = []
 
 [dependencies]
-arrow = "54.2.1"
-ctor = "0.4.0"
-parquet = "54.2.1"
+arrow = "55.2.0"
+ctor = "0.5.0"
+parquet = "55.2.0"
 tokio = { version = "1.0", features = ["rt-multi-thread"] }
 tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
 thiserror = "2"
-datafusion = "46.0.0"
-datafusion-expr = "46.0.0"
-datafusion-functions = "46.0.0"
+datafusion = "49.0.2"
+datafusion-expr = "49.0.2"
+datafusion-functions = "49.0.2"
 approx = "0.5.1"
 async-trait = "0.1.87"
 futures = "0.3.31"
 rayon = "1.10"
 
+# Add pyo3 as an optional dependency
+pyo3 = { version = "0.24.1", optional = true, features = ["macros"] }
+
 [dev-dependencies]
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.7.0", features = ["html_reports"] }
 
 [[bench]]
 name = "project_benchmarks"
@@ -69,4 +73,3 @@ debug = true
 
 [profile.example]
 inherits = "release"
-
