@@ -41,4 +41,3 @@ def test_pipeline_fit_transform():
     # after drop-missing, there should be no nulls remaining
     for i in range(out.num_columns):
         assert pc.sum(pc.is_null(out.column(i))).as_py() == 0
-

@@ -591,4 +591,3 @@ class TestPipelineEdgeCases:
 
         # Should remove rows with nulls
         assert result.num_rows == 3
-

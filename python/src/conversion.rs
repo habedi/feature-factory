@@ -28,4 +28,3 @@ pub fn df_to_pyarrow(py: Python<'_>, df: DataFrame) -> PyResult<PyObject> {
     }
     batches[0].to_pyarrow(py)
 }
-
