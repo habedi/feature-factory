@@ -70,7 +70,9 @@ install-snap: ## Install a few dependencies using Snapcraft
 install-deps: install-snap ## Install development dependencies
 	@echo "Installing dependencies..."
 	@rustup component add rustfmt clippy
-	@cargo install cargo-tarpaulin cargo-audit cargo-careful
+	@cargo install --locked cargo-tarpaulin --version 0.31.4
+	@cargo install --locked cargo-audit --version 0.21.0
+	@cargo install --locked cargo-careful
 	@cargo install --locked cargo-nextest --version 0.9.97-b.2
 	@sudo apt-get install -y python3-pip
 	@pip install $(PY_DEP_MNGR)
